@@ -11,6 +11,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../../context/AuthContext";
 import { deleteCustomer, getCustomers } from "../../services/inventoryService";
 import type { CustomerOut } from "../../types/inventory";
@@ -113,13 +114,13 @@ export function ListCustomers() {
             Refresh
           </button>
           {isAdmin && (
-            <a
-              href="/customers/add"
+            <Link
+              to="/customers/add"
               id="go-to-add-customer"
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
             >
               <PlusCircle size={15} /> Add Customer
-            </a>
+            </Link>
           )}
         </div>
       </div>

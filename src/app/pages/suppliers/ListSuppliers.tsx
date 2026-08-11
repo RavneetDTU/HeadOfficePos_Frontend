@@ -11,6 +11,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../../context/AuthContext";
 import { deleteSupplier, getSuppliers } from "../../services/inventoryService";
 import type { SupplierOut } from "../../types/inventory";
@@ -113,13 +114,13 @@ export function ListSuppliers() {
             Refresh
           </button>
           {isAdmin && (
-            <a
-              href="/suppliers/add"
+            <Link
+              to="/suppliers/add"
               id="go-to-add-supplier"
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
             >
               <PlusCircle size={15} /> Add Supplier
-            </a>
+            </Link>
           )}
         </div>
       </div>

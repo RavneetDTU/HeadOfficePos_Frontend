@@ -11,6 +11,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../../context/AuthContext";
 import { deleteBiller, getBillers } from "../../services/inventoryService";
 import type { BillerOut } from "../../types/inventory";
@@ -113,13 +114,13 @@ export function ListBillers() {
             Refresh
           </button>
           {isAdmin && (
-            <a
-              href="/billers/add"
+            <Link
+              to="/billers/add"
               id="go-to-add-biller"
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
             >
               <PlusCircle size={15} /> Add Biller
-            </a>
+            </Link>
           )}
         </div>
       </div>

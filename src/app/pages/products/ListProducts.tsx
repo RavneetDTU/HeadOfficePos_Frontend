@@ -11,6 +11,7 @@ import {
     XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { SearchAutosuggest } from "../../components/ui/SearchAutosuggest";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
@@ -311,13 +312,13 @@ export function ListProducts() {
             Refresh
           </button>
           {isAdmin && (
-            <a
-              href="/products/add"
+            <Link
+              to="/products/add"
               id="go-to-add-product"
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
             >
               <Package size={15} /> Add Product
-            </a>
+            </Link>
           )}
         </div>
       </div>
