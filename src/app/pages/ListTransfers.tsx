@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Search,
   Truck,
-  User,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -64,8 +63,9 @@ function printTransferInvoice(opts: {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
     body { padding: 40px; color: #111; background: #fff; font-size: 13px; }
-    .top-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .top-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
     .col-info { display: flex; gap: 10px; font-size: 11px; color: #475569; }
+    .col-info .label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; margin-bottom: 4px; }
     .col-info h3 { font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
     .col-info p { margin-bottom: 2px; }
     .ref-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
@@ -92,6 +92,7 @@ function printTransferInvoice(opts: {
   <div class="top-grid">
     <div class="col-info">
       <div>
+        <p class="label">From</p>
         <h3>${opts.fromWarehouse}</h3>
         <p>${opts.fromAddress || ""}</p>
         <p>Tel: ${opts.fromPhone || ""}</p>
@@ -100,14 +101,7 @@ function printTransferInvoice(opts: {
     </div>
     <div class="col-info">
       <div>
-        <h3>${opts.biller}</h3>
-        <p>${opts.fromAddress || ""}</p>
-        <p>Tel: ${opts.fromPhone || ""}</p>
-        <p>Email: ${opts.fromEmail || ""}</p>
-      </div>
-    </div>
-    <div class="col-info">
-      <div>
+        <p class="label">To</p>
         <h3>${opts.toStore}</h3>
         <p>${opts.toAddress || ""}</p>
         <p>Tel: ${opts.toPhone || ""}</p>
@@ -325,12 +319,13 @@ function InvoiceDetailModal({
 
         <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6">
           <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-gray-150 pb-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-gray-150 pb-5">
               <div className="flex gap-2.5">
                 <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-500">
                   <Building2 size={18} />
                 </div>
                 <div className="text-xs space-y-0.5">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">From</p>
                   <p className="font-bold text-gray-850">{fromWhName}</p>
                   <p className="text-gray-500">{fromWh.address || fromWh.city || "Central Warehouse"}</p>
                   {fromWh.phone && <p className="text-gray-500">Tel: {fromWh.phone}</p>}
@@ -340,21 +335,10 @@ function InvoiceDetailModal({
 
               <div className="flex gap-2.5">
                 <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-500">
-                  <User size={18} />
-                </div>
-                <div className="text-xs space-y-0.5">
-                  <p className="font-bold text-gray-855">{transfer.created_by || "HeadOffice"}</p>
-                  <p className="text-gray-500">Manager</p>
-                  {fromWh.phone && <p className="text-gray-500">Tel: {fromWh.phone}</p>}
-                  {fromWh.email && <p className="text-gray-500">Email: {fromWh.email}</p>}
-                </div>
-              </div>
-
-              <div className="flex gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-500">
                   <Building2 size={18} />
                 </div>
                 <div className="text-xs space-y-0.5">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">To</p>
                   <p className="font-bold text-gray-850">{toStName}</p>
                   <p className="text-gray-500">{toSt.address || toSt.city || "Destination Store"}</p>
                   {toSt.phone && <p className="text-gray-500">Tel: {toSt.phone}</p>}
@@ -688,13 +672,13 @@ export function ListTransfers() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
         <span>Home</span><span>/</span>
-        <span className="text-gray-900 font-medium">Stock Transfers</span>
+        <span className="text-gray-900 font-medium">Sales</span>
       </div>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Stock Transfers</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Sales (All Warehouses)</h1>
           <p className="text-sm text-gray-500 mt-0.5">Warehouse → Store stock movements</p>
         </div>
         <div className="flex items-center gap-2">
@@ -705,7 +689,7 @@ export function ListTransfers() {
             to="/transfers/add"
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
           >
-            <Truck size={16} /> New Transfer
+            <Truck size={16} /> New Sale
           </Link>
         </div>
       </div>
@@ -713,9 +697,9 @@ export function ListTransfers() {
       {/* KPI Cards */}
       <div className="grid grid-cols-3 gap-4 mb-5">
         {[
-          { label: "Total Transfers", value: String(total), sub: "all time", color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Total Sales", value: String(total), sub: "all time", color: "text-blue-600", bg: "bg-blue-50" },
           { label: "Completed", value: String(completedCount), sub: "in current view", color: "text-green-600", bg: "bg-green-50" },
-          { label: "Total Value Transferred", value: fmtZAR(totalValue), sub: "in current view", color: "text-purple-600", bg: "bg-purple-50" },
+          { label: "Total Sales Value", value: fmtZAR(totalValue), sub: "in current view", color: "text-purple-600", bg: "bg-purple-50" },
         ].map((k) => (
           <div key={k.label} className="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3">
             <div className={`w-10 h-10 ${k.bg} rounded-lg flex items-center justify-center flex-shrink-0`}>

@@ -191,7 +191,7 @@ export function AddProduct() {
                   required
                   value={form.name}
                   onChange={(e) => updateField("name", e.target.value)}
-                  placeholder="e.g. Phonak Audeo Paradise P90-R"
+                  placeholder="Enter product name"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
               </div>
@@ -202,7 +202,7 @@ export function AddProduct() {
                   required
                   value={form.code}
                   onChange={(e) => updateField("code", e.target.value)}
-                  placeholder="e.g. HA-001"
+                  placeholder="Enter unique SKU"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
               </div>

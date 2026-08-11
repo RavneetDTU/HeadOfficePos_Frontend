@@ -1,17 +1,20 @@
 import {
-  ArrowLeftRight,
-  BarChart3,
-  Building2,
-  ChevronDown,
-  LayoutDashboard,
-  ListOrdered,
-  Package,
-  PlusCircle,
-  ScrollText,
-  SendToBack,
-  Settings,
-  ShieldCheck,
-  Users
+    ArrowLeftRight,
+    BarChart3,
+    Building2,
+    ChevronDown,
+    Contact2,
+    FileCheck,
+    FileText,
+    LayoutDashboard,
+    ListOrdered,
+    Package,
+    PlusCircle,
+    ScrollText,
+    SendToBack,
+    Settings,
+    ShieldCheck,
+    Users
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router";
@@ -29,7 +32,7 @@ const navItems: NavItem[] = [
     label: "Products",
     icon: <Package size={20} />,
     children: [
-      { label: "Product List", icon: <ListOrdered size={18} />, path: "/products" },
+      { label: "List Product", icon: <ListOrdered size={18} />, path: "/products" },
       { label: "Add Product", icon: <PlusCircle size={18} />, path: "/products/add" },
     ],
   },
@@ -42,10 +45,38 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    label: "Quotation",
+    icon: <FileText size={20} />,
+    children: [
+      { label: "List Quotation", icon: <ListOrdered size={18} />, path: "/quotations" },
+      { label: "Add Quotation", icon: <PlusCircle size={18} />, path: "/quotations/add" },
+    ],
+  },
+  {
+    label: "Proforma",
+    icon: <FileCheck size={20} />,
+    children: [
+      { label: "List Proforma", icon: <ListOrdered size={18} />, path: "/proforma" },
+      { label: "Add Proforma", icon: <PlusCircle size={18} />, path: "/proforma/add" },
+    ],
+  },
+  {
     label: "Purchases",
     icon: <SendToBack size={20} />,
     children: [
       { label: "All Purchases", icon: <ListOrdered size={18} />, path: "/requests" },
+    ],
+  },
+  {
+    label: "People",
+    icon: <Contact2 size={20} />,
+    children: [
+      { label: "List Biller", icon: <ListOrdered size={18} />, path: "/billers" },
+      { label: "Add Biller", icon: <PlusCircle size={18} />, path: "/billers/add" },
+      { label: "List Customer", icon: <ListOrdered size={18} />, path: "/customers" },
+      { label: "Add Customer", icon: <PlusCircle size={18} />, path: "/customers/add" },
+      { label: "List Supplier", icon: <ListOrdered size={18} />, path: "/suppliers" },
+      { label: "Add Supplier", icon: <PlusCircle size={18} />, path: "/suppliers/add" },
     ],
   },
   {

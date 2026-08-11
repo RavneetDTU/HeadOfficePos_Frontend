@@ -5,7 +5,10 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
 // ─── HeadOffice POS Pages ─────────────────────────────────────────────────────
+import { AddSale } from "./pages/AddSale";
 import { AddTransfer } from "./pages/AddTransfer";
+import { ListProformas } from "./pages/ListProformas";
+import { ListQuotations } from "./pages/ListQuotations";
 import { ListStockRequests } from "./pages/ListStockRequests";
 import { ListTransfers } from "./pages/ListTransfers";
 import { LoginPage } from "./pages/LoginPage";
@@ -15,6 +18,12 @@ import { UserManagement } from "./pages/settings/UserManagement";
 import { UserManagementSystem } from "./pages/settings/UserManagementSystem";
 import { WarehouseSettings } from "./pages/settings/WarehouseSettings";
 import { StoreDetailPage } from "./pages/StoreDetailPage";
+import { AddBiller } from "./pages/billers/AddBiller";
+import { ListBillers } from "./pages/billers/ListBillers";
+import { AddCustomer } from "./pages/customers/AddCustomer";
+import { ListCustomers } from "./pages/customers/ListCustomers";
+import { AddSupplier } from "./pages/suppliers/AddSupplier";
+import { ListSuppliers } from "./pages/suppliers/ListSuppliers";
 import { Unauthorized } from "./pages/Unauthorized";
 import { UpcomingFeature } from "./pages/UpcomingFeature";
 
@@ -100,12 +109,28 @@ export default function App() {
 
 
 
-            {/* Transfers */}
+            {/* Transfers / Sales */}
             <Route path="/transfers" element={<ListTransfers />} />
             <Route path="/transfers/add" element={<AddTransfer />} />
 
+            {/* Quotations */}
+            <Route path="/quotations" element={<ListQuotations />} />
+            <Route path="/quotations/add" element={<AddSale />} />
+
+            {/* Proforma Invoices */}
+            <Route path="/proforma" element={<ListProformas />} />
+            <Route path="/proforma/add" element={<AddSale />} />
+
             {/* Stock Requests — admin approve/reject */}
             <Route path="/requests" element={<ListStockRequests />} />
+
+            {/* People — Billers, Customers, Suppliers */}
+            <Route path="/billers" element={<ListBillers />} />
+            <Route path="/billers/add" element={<AddBiller />} />
+            <Route path="/customers" element={<ListCustomers />} />
+            <Route path="/customers/add" element={<AddCustomer />} />
+            <Route path="/suppliers" element={<ListSuppliers />} />
+            <Route path="/suppliers/add" element={<AddSupplier />} />
 
             {/* Settings */}
             <Route path="/settings/warehouse" element={<WarehouseSettings />} />

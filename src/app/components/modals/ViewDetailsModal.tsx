@@ -1,4 +1,4 @@
-import { X, Printer, Mail, CreditCard, Truck, RotateCcw, FileText, Eye } from "lucide-react";
+import { CreditCard, Eye, FileText, Mail, Printer, RotateCcw, Truck, X } from "lucide-react";
 
 interface ViewDetailsModalProps {
   isOpen: boolean;
@@ -6,76 +6,68 @@ interface ViewDetailsModalProps {
   saleData: any;
 }
 
-const saleDetails = {
-  company: {
-    name: "HEARING AID LAB BLUFF (PTY) LTD",
-    address: "Shop 45A, Hillcrest East Port",
-    city: "Durban, 4001",
-    tel: "031 912 0021",
-    email: "info@hearingaidlab.co.za",
-    vatNo: "4100234567",
-  },
-  customer: {
-    name: "Sarah Johnson",
-    address: "14 Carnation Road, Bluff",
-    city: "Durban 4026",
-    phone: "+27 31 467 8900",
-    email: "sarah.johnson@email.com",
-  },
-  ref: "SAL/2026/05/29/14477",
-  date: "13/05/2026 15:10",
-  warehouse: "HEAD OFFICE",
-  biller: "Joshua Blatter",
-  saleStatus: "Completed",
-  paymentStatus: "Paid",
-  items: [
-    {
-      no: 1,
-      description: "Phonak Audeo Paradise P90-R (HA-001)",
-      serialNo: "PH-2026-001",
-      qty: 2,
-      unitPrice: 6500,
-      tax: 15,
-      subtotal: 13000,
-    },
-    {
-      no: 2,
-      description: "Phonak TV Connector (ACC-001)",
-      serialNo: "—",
-      qty: 1,
-      unitPrice: 599,
-      tax: 15,
-      subtotal: 599,
-    },
-    {
-      no: 3,
-      description: "Annual Service & Clean (SERV-001)",
-      serialNo: "—",
-      qty: 1,
-      unitPrice: 450,
-      tax: 0,
-      subtotal: 450,
-    },
-  ],
-  subtotal: 14049,
-  discount: 500,
-  tax: 2017.35,
-  grandTotal: 15566.35,
-  paid: 15566.35,
-  balance: 0,
-  payments: [
-    {
-      date: "13/05/2026 15:10",
-      ref: "POZS034520301",
-      paidBy: "Credit Card",
-      cvv: "",
-      amount: 15566.35,
-      enteredBy: "Joshua Blatter",
-      returned: "—",
-      type: "Payment",
-    },
-  ],
+/** Company letterhead only — no product / line-item demo data. */
+const COMPANY = {
+  name: "HEARING AID LAB BLUFF (PTY) LTD",
+  address: "Shop 45A, Hillcrest East Port",
+  city: "Durban, 4001",
+  tel: "031 912 0021",
+  email: "info@hearingaidlab.co.za",
+  vatNo: "4100234567",
 };
+
+function mapLineItems(saleData: any): Array<{
+  no: number;
+  description: string;
+  serialNo: string;
+  qty: number;
+  unitPrice: number;
+  tax: number;
+  subtotal: number;
+}> {
+  const raw = saleData?.items ?? saleData?.lineItems ?? saleData?.products ?? [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item: any, i: number) => {
+    const qty = Number(item.qty ?? item.quantity ?? 0);
+    const unitPrice = Number(item.unitPrice ?? item.unitCost ?? item.price ?? item.sellingPrice ?? 0);
+    const tax = Number(item.tax ?? item.taxPercent ?? 0);
+    const name = item.description ?? item.name ?? item.productName ?? "—";
+    const sku = item.sku ?? item.productSku;
+    return {
+      no: Number(item.no ?? i + 1),
+      description: sku ? `${name} (${sku})` : String(name),
+      serialNo: String(item.serialNo ?? item.serial_number ?? "—"),
+      qty,
+      unitPrice,
+      tax,
+      subtotal: Number(item.subtotal ?? qty * unitPrice),
+    };
+  });
+}
+
+function mapPayments(saleData: any): Array<{
+  date: string;
+  ref: string;
+  paidBy: string;
+  cvv: string;
+  amount: number;
+  enteredBy: string;
+  returned: string;
+  type: string;
+}> {
+  const raw = saleData?.payments ?? saleData?.paymentHistory ?? [];
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  return raw.map((p: any) => ({
+    date: String(p.date ?? p.createdAt ?? "—"),
+    ref: String(p.ref ?? p.reference ?? "—"),
+    paidBy: String(p.paidBy ?? p.method ?? "—"),
+    cvv: String(p.cvv ?? ""),
+    amount: Number(p.amount ?? 0),
+    enteredBy: String(p.enteredBy ?? p.createdBy ?? "—"),
+    returned: String(p.returned ?? "—"),
+    type: String(p.type ?? "Payment"),
+  }));
+}
 
 export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModalProps) {
   if (!isOpen) return null;
@@ -84,25 +76,29 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
     window.open(`/invoice/1?type=${type}`, "_blank");
   };
 
+  const lineItems = mapLineItems(saleData);
+  const payments = mapPayments(saleData);
+  const computedSubtotal = lineItems.reduce((acc, i) => acc + i.subtotal, 0);
+
   // Check if it's a purchase record or a sale record
   const isPurchase = saleData && ("supplier" in saleData || "supplierPhone" in saleData);
   const contactLabel = isPurchase ? "Supplier Info" : "Bill To";
-  
+
   const contactName = isPurchase
     ? (saleData?.supplier || "—")
-    : (saleData?.customerName || saleDetails.customer.name);
-    
+    : (saleData?.customerName || saleData?.customer || "—");
+
   const contactPhone = isPurchase
     ? (saleData?.supplierPhone || "—")
-    : (saleData?.customerPhone || saleDetails.customer.phone);
+    : (saleData?.customerPhone || "—");
 
-  const contactAddress = isPurchase ? "" : saleDetails.customer.address;
-  const contactCity = isPurchase ? "" : saleDetails.customer.city;
-  const contactEmail = isPurchase ? "" : saleDetails.customer.email;
+  const contactAddress = isPurchase ? "" : (saleData?.customerAddress || "");
+  const contactCity = isPurchase ? "" : (saleData?.customerCity || "");
+  const contactEmail = isPurchase ? "" : (saleData?.customerEmail || "");
 
   const infoTitle = isPurchase ? "Purchase Info" : "Sale Info";
-  
-  const referenceValue = saleData?.reference || saleData?.ref || saleDetails.ref;
+
+  const referenceValue = saleData?.reference || saleData?.ref || "—";
   const dateValue = saleData?.date
     ? (() => {
         const d = new Date(saleData.date);
@@ -110,15 +106,22 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
         const pad = (n: number) => String(n).padStart(2, "0");
         return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
       })()
-    : saleDetails.date;
-  const warehouseValue = saleData?.warehouse || saleDetails.warehouse;
-  const billerValue = isPurchase ? "—" : (saleData?.biller || saleDetails.biller);
+    : "—";
+  const warehouseValue = saleData?.warehouse || "—";
+  const billerValue = isPurchase ? "—" : (saleData?.biller || "—");
 
   const statusValue = isPurchase
     ? (saleData?.purchaseStatus || "Ordered")
-    : (saleData?.saleStatus || saleDetails.saleStatus);
+    : (saleData?.saleStatus || saleData?.status || "—");
 
-  const paymentStatusValue = saleData?.paymentStatus || saleDetails.paymentStatus;
+  const paymentStatusValue = saleData?.paymentStatus || "—";
+
+  const subtotal = Number(saleData?.subtotal ?? computedSubtotal);
+  const discount = Number(saleData?.discount ?? 0);
+  const tax = Number(saleData?.tax ?? saleData?.taxAmount ?? 0);
+  const grandTotal = Number(saleData?.grandTotal ?? subtotal - discount + tax);
+  const paid = Number(saleData?.paid ?? 0);
+  const balance = Number(saleData?.balance ?? grandTotal - paid);
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
@@ -154,12 +157,12 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
           <div className="grid grid-cols-3 border-b border-gray-100">
             <div className="p-5 border-r border-gray-100">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">From</p>
-              <p className="text-sm font-semibold text-gray-900">{saleDetails.company.name}</p>
-              <p className="text-xs text-gray-500 mt-1">{saleDetails.company.address}</p>
-              <p className="text-xs text-gray-500">{saleDetails.company.city}</p>
-              <p className="text-xs text-gray-500">Tel: {saleDetails.company.tel}</p>
-              <p className="text-xs text-gray-500">{saleDetails.company.email}</p>
-              <p className="text-xs text-gray-400 mt-1">VAT: {saleDetails.company.vatNo}</p>
+              <p className="text-sm font-semibold text-gray-900">{COMPANY.name}</p>
+              <p className="text-xs text-gray-500 mt-1">{COMPANY.address}</p>
+              <p className="text-xs text-gray-500">{COMPANY.city}</p>
+              <p className="text-xs text-gray-500">Tel: {COMPANY.tel}</p>
+              <p className="text-xs text-gray-500">{COMPANY.email}</p>
+              <p className="text-xs text-gray-400 mt-1">VAT: {COMPANY.vatNo}</p>
             </div>
             <div className="p-5 border-r border-gray-100">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{contactLabel}</p>
@@ -204,17 +207,25 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {saleDetails.items.map((item, i) => (
-                    <tr key={item.no} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
-                      <td className="px-3 py-2.5 text-xs text-gray-500">{item.no}</td>
-                      <td className="px-3 py-2.5 text-sm font-medium text-gray-900">{item.description}</td>
-                      <td className="px-3 py-2.5 text-xs font-mono text-gray-500">{item.serialNo}</td>
-                      <td className="px-3 py-2.5 text-sm text-center text-gray-900">{item.qty}</td>
-                      <td className="px-3 py-2.5 text-xs text-right text-gray-900">R {item.unitPrice.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-xs text-center text-gray-500">{item.tax}%</td>
-                      <td className="px-3 py-2.5 text-sm text-right font-semibold text-gray-900">R {item.subtotal.toLocaleString()}</td>
+                  {lineItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-400">
+                        No line items available for this record
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    lineItems.map((item, i) => (
+                      <tr key={item.no} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                        <td className="px-3 py-2.5 text-xs text-gray-500">{item.no}</td>
+                        <td className="px-3 py-2.5 text-sm font-medium text-gray-900">{item.description}</td>
+                        <td className="px-3 py-2.5 text-xs font-mono text-gray-500">{item.serialNo}</td>
+                        <td className="px-3 py-2.5 text-sm text-center text-gray-900">{item.qty}</td>
+                        <td className="px-3 py-2.5 text-xs text-right text-gray-900">R {item.unitPrice.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-xs text-center text-gray-500">{item.tax}%</td>
+                        <td className="px-3 py-2.5 text-sm text-right font-semibold text-gray-900">R {item.subtotal.toLocaleString()}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -223,9 +234,9 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
             <div className="flex justify-end mt-4">
               <div className="w-64 space-y-1.5">
                 {[
-                  ["Subtotal", `R ${saleDetails.subtotal.toLocaleString()}`, false],
-                  ["Discount", `– R ${saleDetails.discount.toLocaleString()}`, false],
-                  ["VAT (15%)", `R ${saleDetails.tax.toFixed(2)}`, false],
+                  ["Subtotal", `R ${subtotal.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`, false],
+                  ["Discount", `– R ${discount.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`, false],
+                  ["VAT", `R ${tax.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}`, false],
                 ].map(([label, val, isBold]) => (
                   <div key={String(label)} className="flex justify-between text-sm">
                     <span className="text-gray-500">{label}</span>
@@ -235,19 +246,19 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
                 <div className="pt-2 border-t border-gray-200 flex justify-between">
                   <span className="text-sm font-bold text-gray-900">Grand Total</span>
                   <span className="text-base font-bold text-gray-900">
-                    R {saleData?.grandTotal != null ? Number(saleData.grandTotal).toLocaleString("en-ZA", { minimumFractionDigits: 2 }) : saleDetails.grandTotal.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                    R {grandTotal.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-green-600">Paid</span>
                   <span className="font-semibold text-green-700">
-                    R {saleData?.paid != null ? Number(saleData.paid).toLocaleString("en-ZA", { minimumFractionDigits: 2 }) : saleDetails.paid.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                    R {paid.toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm font-bold">
                   <span className="text-gray-900">Balance</span>
-                  <span className={(saleData?.balance != null ? Number(saleData.balance) : saleDetails.balance) === 0 ? "text-green-700" : "text-red-600"}>
-                    R {saleData?.balance != null ? Number(saleData.balance).toFixed(2) : saleDetails.balance.toFixed(2)}
+                  <span className={balance === 0 ? "text-green-700" : "text-red-600"}>
+                    R {balance.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -267,18 +278,26 @@ export function ViewDetailsModal({ isOpen, onClose, saleData }: ViewDetailsModal
                   </tr>
                 </thead>
                 <tbody>
-                  {saleDetails.payments.map((p, i) => (
-                    <tr key={i} className="bg-gray-50/50 border-t border-gray-100">
-                      <td className="px-3 py-2">{p.date}</td>
-                      <td className="px-3 py-2 font-mono">{p.ref}</td>
-                      <td className="px-3 py-2">{p.paidBy}</td>
-                      <td className="px-3 py-2">{p.cvv}</td>
-                      <td className="px-3 py-2 font-semibold">R {p.amount.toLocaleString()}</td>
-                      <td className="px-3 py-2">{p.enteredBy}</td>
-                      <td className="px-3 py-2">{p.returned}</td>
-                      <td className="px-3 py-2">{p.type}</td>
+                  {payments.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-6 text-center text-gray-400">
+                        No payment records
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    payments.map((p, i) => (
+                      <tr key={i} className="bg-gray-50/50 border-t border-gray-100">
+                        <td className="px-3 py-2">{p.date}</td>
+                        <td className="px-3 py-2 font-mono">{p.ref}</td>
+                        <td className="px-3 py-2">{p.paidBy}</td>
+                        <td className="px-3 py-2">{p.cvv}</td>
+                        <td className="px-3 py-2 font-semibold">R {p.amount.toLocaleString()}</td>
+                        <td className="px-3 py-2">{p.enteredBy}</td>
+                        <td className="px-3 py-2">{p.returned}</td>
+                        <td className="px-3 py-2">{p.type}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

@@ -5,48 +5,55 @@
 
 import { apiFetch } from "../lib/api";
 import type {
-  AddStockPayload,
-  AdminDashboardSummary,
-  CashupOut,
-  CreateStockRequestPayload,
-  CreateTransferPayload,
-  DeliveryOut,
-  ExpenseCreate,
-  ExpenseOut,
-  GiftCardOut,
-  InventoryAdjustmentCreate,
-  InventoryAdjustmentOut,
-  InventoryLedgerOut,
-  MasterDataResponse,
-  Product,
-  ProductListParams,
-  ProductsResponse,
-  PurchaseOverview,
-  PurchaseReturnOut,
-  RefundOut,
-  SaleReturnOut,
-  StockItemOut,
-  StockRequest,
-  StockRequestListResponse,
-  StoreDashboardSummary,
-  StoreInventoryItem,
-  StoreInventoryResponse,
-  StorePurchaseHistoryResponse,
-  Transfer,
-  TransferItem,
-  TransferListParams,
-  TransferListResponse,
-  UpdateStockRequestStatusPayload,
-  Warehouse,
-  WarehouseInventoryItem,
-  WarehouseInventoryParams,
-  WarehouseInventoryResponse,
-  WarehouseOut,
-  WarehouseTransferCreate,
-  WarehouseTransferDetailOut,
-  WarehouseTransferListItemOut,
-  WarehouseTransferListResponse,
-  WarehouseTransferResponse,
+    AddStockPayload,
+    AdminDashboardSummary,
+    BillerCreate,
+    BillerListParams,
+    BillerListResponse,
+    BillerOut,
+    CashupOut,
+    ContactListResponse,
+    ContactUpdate,
+    CreateStockRequestPayload,
+    CreateTransferPayload,
+    CustomerCreate,
+    CustomerListParams,
+    CustomerListResponse,
+    CustomerOut,
+    DeliveryOut,
+    ExpenseCreate,
+    ExpenseOut,
+    GiftCardOut,
+    InventoryAdjustmentCreate,
+    InventoryAdjustmentOut,
+    InventoryLedgerOut,
+    MasterDataResponse,
+    Product,
+    PurchaseOverview,
+    PurchaseReturnOut,
+    RefundOut,
+    SaleReturnOut,
+    StockItemOut,
+    StockRequest,
+    StockRequestListResponse,
+    StoreDashboardSummary,
+    StoreInventoryItem,
+    StoreInventoryResponse,
+    StorePurchaseHistoryResponse,
+    SupplierCreate,
+    SupplierListParams,
+    SupplierListResponse,
+    SupplierOut,
+    Transfer,
+    TransferItem,
+    TransferListParams,
+    TransferListResponse,
+    UpdateStockRequestStatusPayload,
+    Warehouse,
+    WarehouseInventoryItem,
+    WarehouseInventoryParams,
+    WarehouseInventoryResponse,
+    WarehouseOut
 } from "../types/inventory";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -164,7 +171,7 @@ function mapTransferItem(raw: Record<string, unknown>): Transfer {
             return map[tId] as Transfer["status"];
           }
         }
-      } catch {}
+      } catch { }
       return dbStatus;
     })(),
     created_by: (raw.createdBy as string) ?? (raw.created_by as string) ?? "",
@@ -187,7 +194,7 @@ export async function getMasterData(): Promise<MasterDataResponse> {
   // Fetch page 1 with 100 limit (backend maximum allowed limit is 100)
   const firstPage = await apiFetch<MasterDataResponse>("/master-data?productLimit=100&productPage=1");
   const totalProducts = firstPage.totalProducts ?? 0;
-  
+
   if (totalProducts <= 100) {
     return firstPage;
   }
@@ -202,7 +209,7 @@ export async function getMasterData(): Promise<MasterDataResponse> {
   }
 
   const pagesResp = await Promise.all(promises);
-  
+
   // Merge products
   const allProducts = [...firstPage.products];
   for (const resp of pagesResp) {
@@ -342,6 +349,180 @@ export async function updateProduct(
 /** DELETE /products/{id} — Soft delete product */
 export async function deleteProduct(id: number): Promise<void> {
   return apiFetch<void>(`/products/${id}`, { method: "DELETE" });
+}
+
+// ─── People contacts (Suppliers / Billers / Customers) ─────────────────────────
+// Live API returns ContactListResponse { items, total, page, limit, pages }.
+// Service maps that into the UI list shapes (suppliers/billers/customers).
+
+function peopleListQuery(params: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  city?: string;
+  country?: string;
+  status?: string;
+  sort_by?: string;
+  order?: string;
+}): string {
+  return buildQuery({
+    page: params.page ?? 1,
+    limit: params.limit ?? 20,
+    search: params.search || undefined,
+    city: params.city || undefined,
+    country: params.country || undefined,
+    status: params.status && params.status !== "All" ? params.status : undefined,
+    sort_by: params.sort_by || undefined,
+    order: params.order || undefined,
+  });
+}
+
+function mapContactList(raw: ContactListResponse) {
+  return {
+    items: raw.items ?? [],
+    total: raw.total ?? 0,
+    total_pages: raw.pages ?? 1,
+    current_page: raw.page ?? 1,
+    limit: raw.limit ?? 20,
+  };
+}
+
+/** GET /suppliers — Paginated list of suppliers with filtering & search */
+export async function getSuppliers(
+  params: SupplierListParams = {}
+): Promise<SupplierListResponse> {
+  const raw = await apiFetch<ContactListResponse>(
+    `/suppliers${peopleListQuery(params)}`
+  );
+  const mapped = mapContactList(raw);
+  return {
+    suppliers: mapped.items,
+    total: mapped.total,
+    total_pages: mapped.total_pages,
+    current_page: mapped.current_page,
+    limit: mapped.limit,
+  };
+}
+
+/** GET /suppliers/{id} — Get supplier details by ID */
+export async function getSupplier(id: number): Promise<SupplierOut> {
+  return apiFetch<SupplierOut>(`/suppliers/${id}`);
+}
+
+/** POST /suppliers — Create a new supplier profile */
+export async function createSupplier(payload: SupplierCreate): Promise<SupplierOut> {
+  return apiFetch<SupplierOut>("/suppliers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PATCH /suppliers/{id} — Update supplier profile */
+export async function updateSupplier(
+  id: number,
+  payload: ContactUpdate
+): Promise<SupplierOut> {
+  return apiFetch<SupplierOut>(`/suppliers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DELETE /suppliers/{id} — Delete or deactivate a supplier profile */
+export async function deleteSupplier(id: number): Promise<void> {
+  return apiFetch<void>(`/suppliers/${id}`, { method: "DELETE" });
+}
+
+/** GET /billers — Paginated list of billers */
+export async function getBillers(
+  params: BillerListParams = {}
+): Promise<BillerListResponse> {
+  const raw = await apiFetch<ContactListResponse>(
+    `/billers${peopleListQuery(params)}`
+  );
+  const mapped = mapContactList(raw);
+  return {
+    billers: mapped.items,
+    total: mapped.total,
+    total_pages: mapped.total_pages,
+    current_page: mapped.current_page,
+    limit: mapped.limit,
+  };
+}
+
+/** GET /billers/{id} */
+export async function getBiller(id: number): Promise<BillerOut> {
+  return apiFetch<BillerOut>(`/billers/${id}`);
+}
+
+/** POST /billers — Create a new biller profile */
+export async function createBiller(payload: BillerCreate): Promise<BillerOut> {
+  return apiFetch<BillerOut>("/billers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PATCH /billers/{id} */
+export async function updateBiller(
+  id: number,
+  payload: ContactUpdate
+): Promise<BillerOut> {
+  return apiFetch<BillerOut>(`/billers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DELETE /billers/{id} */
+export async function deleteBiller(id: number): Promise<void> {
+  return apiFetch<void>(`/billers/${id}`, { method: "DELETE" });
+}
+
+/** GET /customers — Paginated list of customers */
+export async function getCustomers(
+  params: CustomerListParams = {}
+): Promise<CustomerListResponse> {
+  const raw = await apiFetch<ContactListResponse>(
+    `/customers${peopleListQuery(params)}`
+  );
+  const mapped = mapContactList(raw);
+  return {
+    customers: mapped.items,
+    total: mapped.total,
+    total_pages: mapped.total_pages,
+    current_page: mapped.current_page,
+    limit: mapped.limit,
+  };
+}
+
+/** GET /customers/{id} */
+export async function getCustomer(id: number): Promise<CustomerOut> {
+  return apiFetch<CustomerOut>(`/customers/${id}`);
+}
+
+/** POST /customers — Create a new customer profile */
+export async function createCustomer(payload: CustomerCreate): Promise<CustomerOut> {
+  return apiFetch<CustomerOut>("/customers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PATCH /customers/{id} */
+export async function updateCustomer(
+  id: number,
+  payload: ContactUpdate
+): Promise<CustomerOut> {
+  return apiFetch<CustomerOut>(`/customers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DELETE /customers/{id} */
+export async function deleteCustomer(id: number): Promise<void> {
+  return apiFetch<void>(`/customers/${id}`, { method: "DELETE" });
 }
 
 // ─── Warehouse Inventory ───────────────────────────────────────────────────────
@@ -504,18 +685,18 @@ export async function createTransfer(
     const rawItems = Array.isArray(raw.items) ? (raw.items as any[]) : [];
     const items = rawItems.length > 0
       ? rawItems.map(item => ({
-          productSku: item.productSku || item.sku || "",
-          quantity: item.quantity ?? 0,
-          purchasePrice: item.purchasePrice ?? item.purchase_price ?? 0,
-        }))
+        productSku: item.productSku || item.sku || "",
+        quantity: item.quantity ?? 0,
+        purchasePrice: item.purchasePrice ?? item.purchase_price ?? 0,
+      }))
       : payload.items.map(item => ({
-          productSku: "",
-          quantity: item.quantity,
-          purchasePrice: item.purchase_price ?? 0,
-        }));
+        productSku: "",
+        quantity: item.quantity,
+        purchasePrice: item.purchase_price ?? 0,
+      }));
     cache[raw.id as number] = items;
     localStorage.setItem("hal_pos_transfer_items_cache", JSON.stringify(cache));
-  } catch {}
+  } catch { }
 
   return mapTransferItem(raw);
 }
@@ -991,7 +1172,7 @@ export async function getTransferItemsWithCache(
     if (Array.isArray(cached) && cached.length > 0 && cached[0].purchasePrice !== undefined) {
       return cached as { productSku: string; quantity: number; purchasePrice: number }[];
     }
-    
+
     // Fetch raw detail directly to get items (mapTransferItem now preserves items)
     const raw = await apiFetch<Record<string, unknown>>(
       `/warehouse/transfers/${transferId}`

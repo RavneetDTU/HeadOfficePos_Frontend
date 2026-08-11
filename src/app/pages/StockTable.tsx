@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Package,
-  Search,
   Download,
   AlertTriangle,
   CheckCircle,
@@ -10,8 +9,10 @@ import {
   TrendingDown,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { SearchAutosuggest } from "../components/ui/SearchAutosuggest";
+import { getSalesStock } from "../services/inventoryService";
 
 interface StockItem {
   id: number;
@@ -26,48 +27,88 @@ interface StockItem {
   totalValue: number;
 }
 
-const stockData: StockItem[] = [
-  { id: 1, sku: "HA-001", name: "Phonak Audeo Paradise P90-R", category: "Hearing Aids", warehouse: "HEAD OFFICE", inStock: 12, reserved: 2, available: 10, unitCost: 4200, totalValue: 50400 },
-  { id: 2, sku: "HA-002", name: "Signia Pure Charge&Go AX 7", category: "Hearing Aids", warehouse: "HEAD OFFICE", inStock: 3, reserved: 1, available: 2, unitCost: 3800, totalValue: 11400 },
-  { id: 3, sku: "HA-002", name: "Signia Pure Charge&Go AX 7", category: "Hearing Aids", warehouse: "BRANCH 1", inStock: 5, reserved: 0, available: 5, unitCost: 3800, totalValue: 19000 },
-  { id: 4, sku: "ACC-001", name: "Phonak TV Connector", category: "Accessories", warehouse: "BRANCH 1", inStock: 8, reserved: 0, available: 8, unitCost: 320, totalValue: 2560 },
-  { id: 5, sku: "ACC-002", name: "Roger Select iN", category: "Accessories", warehouse: "HEAD OFFICE", inStock: 0, reserved: 3, available: -3, unitCost: 1800, totalValue: 0 },
-  { id: 6, sku: "BAT-001", name: "Size 312 Batteries (6-pack)", category: "Batteries", warehouse: "HEAD OFFICE", inStock: 142, reserved: 10, available: 132, unitCost: 45, totalValue: 6390 },
-  { id: 7, sku: "BAT-001", name: "Size 312 Batteries (6-pack)", category: "Batteries", warehouse: "BRANCH 2", inStock: 30, reserved: 0, available: 30, unitCost: 45, totalValue: 1350 },
-  { id: 8, sku: "HA-003", name: "Oticon More 1 miniRITE R", category: "Hearing Aids", warehouse: "BRANCH 1", inStock: 2, reserved: 2, available: 0, unitCost: 3500, totalValue: 7000 },
-  { id: 9, sku: "HA-004", name: "Widex MOMENT 440", category: "Hearing Aids", warehouse: "BRANCH 2", inStock: 0, reserved: 0, available: 0, unitCost: 4100, totalValue: 0 },
-  { id: 10, sku: "SERV-001", name: "Annual Service & Clean", category: "Services", warehouse: "HEAD OFFICE", inStock: 999, reserved: 0, available: 999, unitCost: 200, totalValue: 199800 },
-];
-
-const warehouses = ["All Warehouses", "HEAD OFFICE", "BRANCH 1", "BRANCH 2"];
-const categories = ["All Categories", "Hearing Aids", "Accessories", "Batteries", "Services"];
-
-// Suggestions built once from static stock data
-const stockSearchSuggestions = Array.from(
-  new Set([
-    ...stockData.map((i) => i.name),
-    ...stockData.map((i) => i.sku),
-  ])
-).sort();
-
 type StockLevel = "all" | "in-stock" | "low-stock" | "out-of-stock";
 
-function getStockLevel(available: number): { label: string; icon: any; color: string; row: string } {
+function getStockLevel(available: number): { label: string; icon: typeof XCircle; color: string; row: string } {
   if (available <= 0) return { label: "Out of Stock", icon: XCircle, color: "text-red-600", row: "bg-red-50/40" };
   if (available <= 3) return { label: "Low Stock", icon: AlertTriangle, color: "text-orange-500", row: "bg-orange-50/30" };
   return { label: "In Stock", icon: CheckCircle, color: "text-green-600", row: "" };
 }
 
+function mapStockRow(raw: Record<string, unknown>, index: number): StockItem {
+  const inStock = Number(raw.inStock ?? raw.quantity ?? 0);
+  const reserved = Number(raw.reserved ?? raw.reservedQty ?? 0);
+  const available = Number(raw.available ?? raw.availableQty ?? inStock - reserved);
+  const unitCost = Number(raw.unitCost ?? raw.costPrice ?? raw.purchasePrice ?? 0);
+  return {
+    id: Number(raw.id ?? index + 1),
+    sku: String(raw.sku ?? raw.productSku ?? ""),
+    name: String(raw.name ?? raw.productName ?? ""),
+    category: String(raw.category ?? "—"),
+    warehouse: String(raw.warehouse ?? raw.warehouseName ?? "—"),
+    inStock,
+    reserved,
+    available,
+    unitCost,
+    totalValue: Number(raw.totalValue ?? inStock * unitCost),
+  };
+}
+
 export function StockTable() {
+  const [stockData, setStockData] = useState<StockItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("All Warehouses");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [levelFilter, setLevelFilter] = useState<StockLevel>("all");
 
+  const loadData = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const raw = await getSalesStock();
+      const rows = (Array.isArray(raw) ? raw : []).map((item, i) =>
+        mapStockRow(item as Record<string, unknown>, i)
+      );
+      setStockData(rows);
+    } catch (e) {
+      console.error("Failed to load stock:", e);
+      setError(e instanceof Error ? e.message : "Failed to load stock from API.");
+      setStockData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const warehouses = useMemo(() => {
+    const set = new Set(stockData.map((i) => i.warehouse).filter(Boolean));
+    return ["All Warehouses", ...Array.from(set).sort()];
+  }, [stockData]);
+
+  const categories = useMemo(() => {
+    const set = new Set(stockData.map((i) => i.category).filter((c) => c && c !== "—"));
+    return ["All Categories", ...Array.from(set).sort()];
+  }, [stockData]);
+
+  const stockSearchSuggestions = useMemo(
+    () =>
+      Array.from(new Set([...stockData.map((i) => i.name), ...stockData.map((i) => i.sku)]))
+        .filter(Boolean)
+        .sort(),
+    [stockData]
+  );
+
   const filtered = stockData.filter((item) => {
+    const q = search.toLowerCase();
     const matchSearch =
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.sku.toLowerCase().includes(search.toLowerCase());
+      !q ||
+      item.name.toLowerCase().includes(q) ||
+      item.sku.toLowerCase().includes(q);
     const matchWarehouse = warehouseFilter === "All Warehouses" || item.warehouse === warehouseFilter;
     const matchCategory = categoryFilter === "All Categories" || item.category === categoryFilter;
     const matchLevel =
@@ -85,7 +126,6 @@ export function StockTable() {
 
   return (
     <div className="p-4 bg-gray-50 min-h-screen">
-      {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
         <span>Home</span><span>/</span>
         <span>Sales</span><span>/</span>
@@ -99,6 +139,12 @@ export function StockTable() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={loadData}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600"
+          >
+            Refresh
+          </button>
+          <button
             onClick={() => window.print()}
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600"
           >
@@ -110,7 +156,12 @@ export function StockTable() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {error && (
+        <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700 flex items-center gap-2">
+          <AlertTriangle size={16} /> {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4 mb-5">
         <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
@@ -156,7 +207,6 @@ export function StockTable() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 flex flex-wrap items-center gap-3">
         <SearchAutosuggest
           value={search}
@@ -185,9 +235,7 @@ export function StockTable() {
               key={l}
               onClick={() => setLevelFilter(l)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                levelFilter === l
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                levelFilter === l ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
               {l === "all" ? "All" : l === "in-stock" ? "In Stock" : l === "low-stock" ? "Low" : "Out"}
@@ -196,7 +244,6 @@ export function StockTable() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <table className="w-full">
           <thead className="bg-blue-600 text-white">
@@ -214,44 +261,53 @@ export function StockTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filtered.map((item, i) => {
-              const level = getStockLevel(item.available);
-              const LevelIcon = level.icon;
-              return (
-                <tr key={item.id} className={`hover:bg-blue-50/20 transition-colors ${level.row} ${i % 2 === 0 ? "" : "bg-gray-50/30"}`}>
-                  <td className="px-4 py-3">
-                    <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700">{item.sku}</span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 font-medium max-w-48 truncate">{item.name}</td>
-                  <td className="px-4 py-3 text-xs text-gray-600">{item.category}</td>
-                  <td className="px-4 py-3 text-xs text-gray-700">{item.warehouse}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className="text-sm font-semibold text-gray-900">{item.inStock}</span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-sm font-semibold ${item.reserved > 0 ? "text-orange-600" : "text-gray-400"}`}>
-                      {item.reserved}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-sm font-bold ${item.available <= 0 ? "text-red-600" : item.available <= 3 ? "text-orange-500" : "text-green-600"}`}>
-                      {item.available}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-right text-gray-700">R {item.unitCost.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-xs text-right font-semibold text-gray-900">
-                    R {item.totalValue.toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`flex items-center gap-1 text-xs font-medium ${level.color}`}>
-                      <LevelIcon size={13} />
-                      {level.label}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
+            {isLoading ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-16 text-center">
+                  <Loader2 size={28} className="animate-spin text-blue-600 mx-auto mb-2" />
+                  <p className="text-gray-400 text-sm">Loading stock from API…</p>
+                </td>
+              </tr>
+            ) : (
+              filtered.map((item, i) => {
+                const level = getStockLevel(item.available);
+                const LevelIcon = level.icon;
+                return (
+                  <tr key={`${item.sku}-${item.warehouse}-${item.id}`} className={`hover:bg-blue-50/20 transition-colors ${level.row} ${i % 2 === 0 ? "" : "bg-gray-50/30"}`}>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700">{item.sku || "—"}</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 font-medium max-w-48 truncate">{item.name || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600">{item.category}</td>
+                    <td className="px-4 py-3 text-xs text-gray-700">{item.warehouse}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-sm font-semibold text-gray-900">{item.inStock}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-sm font-semibold ${item.reserved > 0 ? "text-orange-600" : "text-gray-400"}`}>
+                        {item.reserved}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`text-sm font-bold ${item.available <= 0 ? "text-red-600" : item.available <= 3 ? "text-orange-500" : "text-green-600"}`}>
+                        {item.available}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-right text-gray-700">R {item.unitCost.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-xs text-right font-semibold text-gray-900">
+                      R {item.totalValue.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`flex items-center gap-1 text-xs font-medium ${level.color}`}>
+                        <LevelIcon size={13} />
+                        {level.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+            {!isLoading && filtered.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-4 py-16 text-center">
                   <Package size={40} className="text-gray-200 mx-auto mb-3" />
@@ -275,7 +331,6 @@ export function StockTable() {
           )}
         </table>
 
-        {/* Pagination */}
         <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
           <p className="text-xs text-gray-500">
             Showing {filtered.length} of {stockData.length} stock entries

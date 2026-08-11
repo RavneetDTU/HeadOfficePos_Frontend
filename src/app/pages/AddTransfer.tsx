@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext";
 import {
   AlertCircle,
   ArrowRight,
@@ -12,22 +10,24 @@ import {
   Truck,
   X,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { useAuth } from "../context/AuthContext";
+import { apiFetch } from "../lib/api";
 import {
-  createTransfer,
-  getWarehouses,
-  getStores,
   createStore,
+  createTransfer,
   getMasterData,
   getStoreInventory,
+  getStores,
   getWarehouseInventory,
+  getWarehouses,
 } from "../services/inventoryService";
 import type {
   CreateTransferPayload,
   Warehouse,
   WarehouseInventoryItem,
 } from "../types/inventory";
-import { apiFetch } from "../lib/api";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -447,12 +447,12 @@ export function AddTransfer() {
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
         <a href="/transfers" className="hover:text-blue-600">Transfers</a>
         <span>/</span>
-        <span className="text-gray-900 font-medium">New Transfer</span>
+        <span className="text-gray-900 font-medium">New Sales</span>
       </div>
 
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-xl font-semibold text-gray-900">Create Stock Transfer</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Create Stock Sales</h1>
         <p className="text-sm text-gray-500 mt-0.5">Move products from the central warehouse to a store</p>
       </div>
 
@@ -462,7 +462,7 @@ export function AddTransfer() {
           {/* Header info */}
           <div className="bg-white border border-gray-200 rounded-lg p-5">
             <h2 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-              <Truck size={16} className="text-blue-600" /> Transfer Details
+              <Truck size={16} className="text-blue-600" /> Sales Details
             </h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -494,7 +494,7 @@ export function AddTransfer() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Transfer Date *</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1"> Date *</label>
                 <input
                   type="datetime-local"
                   value={transferDate}
@@ -519,7 +519,7 @@ export function AddTransfer() {
           <div className="bg-white border border-gray-200 rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                <Package size={16} className="text-purple-600" /> Products to Transfer
+                <Package size={16} className="text-purple-600" /> Products to Sale
               </h2>
               <button
                 onClick={addLine}
@@ -570,11 +570,10 @@ export function AddTransfer() {
                           value={line.quantity}
                           onChange={(e) => updateLine(idx, { quantity: e.target.value === "" ? "" : Number(e.target.value) })}
                           placeholder="0"
-                          className={`w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-center ${
-                            Number(line.quantity) > line.available_qty && line.available_qty > 0
+                          className={`w-full px-2 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-center ${Number(line.quantity) > line.available_qty && line.available_qty > 0
                               ? "border-red-400 bg-red-50"
                               : "border-gray-200"
-                          }`}
+                            }`}
                         />
                         {Number(line.quantity) > line.available_qty && line.available_qty > 0 && (
                           <p className="text-xs text-red-500 mt-0.5">Exceeds available</p>
@@ -615,7 +614,7 @@ export function AddTransfer() {
 
             <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
               <div className="text-right">
-                <p className="text-xs text-gray-500">Total Transfer Value</p>
+                <p className="text-xs text-gray-500">Total Sales Value</p>
                 <p className="text-xl font-bold text-gray-900">{fmtZAR(totalValue)}</p>
               </div>
             </div>

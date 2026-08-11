@@ -92,3 +92,7 @@ seed_*.py
 !package.json
 !tsconfig.json
 !vercel.json
+
+# Documentation
+docs/
+

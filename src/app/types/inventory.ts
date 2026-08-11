@@ -635,6 +635,136 @@ export interface Product {
   created_at: string;
 }
 
+// ─── People contacts (Suppliers / Billers / Customers) ─────────────────────────
+// Live API: camelCase payloads + shared ContactResponse / ContactListResponse
+// ({ items, total, page, limit, pages }).
+
+export interface ContactResponse {
+  id: number;
+  groupName?: string;
+  name?: string | null;
+  company?: string | null;
+  firstName?: string | null;
+  surname?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string;
+  vatNumber?: string | null;
+  customField1?: string | null;
+  customField2?: string | null;
+  customField3?: string | null;
+  customField4?: string | null;
+  customField5?: string | null;
+  customField6?: string | null;
+  status?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ContactListResponse {
+  items: ContactResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface ContactListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  city?: string;
+  country?: string;
+  status?: string;
+  sort_by?: string;
+  order?: string;
+}
+
+export interface SupplierCreate {
+  company: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  vatNumber?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string;
+  customField1?: string | null;
+  customField2?: string | null;
+  customField3?: string | null;
+  customField4?: string | null;
+  customField5?: string | null;
+  customField6?: string | null;
+  status?: string;
+}
+
+export type SupplierOut = ContactResponse;
+
+export interface SupplierListResponse {
+  suppliers: SupplierOut[];
+  total: number;
+  total_pages: number;
+  current_page: number;
+  limit: number;
+}
+
+export type SupplierListParams = ContactListParams;
+
+export type BillerCreate = SupplierCreate;
+export type BillerOut = ContactResponse;
+
+export interface BillerListResponse {
+  billers: BillerOut[];
+  total: number;
+  total_pages: number;
+  current_page: number;
+  limit: number;
+}
+
+export type BillerListParams = ContactListParams;
+
+export interface CustomerCreate {
+  name: string;
+  phone: string;
+  firstName?: string | null;
+  surname?: string | null;
+  company?: string | null;
+  email?: string | null;
+  address?: string | null;
+  city?: string | null;
+  vatNumber?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string;
+  customField1?: string | null;
+  customField2?: string | null;
+  customField3?: string | null;
+  customField4?: string | null;
+  customField5?: string | null;
+  customField6?: string | null;
+  status?: string;
+}
+
+export type CustomerOut = ContactResponse;
+
+export interface CustomerListResponse {
+  customers: CustomerOut[];
+  total: number;
+  total_pages: number;
+  current_page: number;
+  limit: number;
+}
+
+export type CustomerListParams = ContactListParams;
+
+export type ContactUpdate = Partial<SupplierCreate> & Partial<CustomerCreate>;
+
 // ─── Stock Requests ───────────────────────────────────────────────────────────
 
 export type StockRequestStatus =

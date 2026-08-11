@@ -1,23 +1,20 @@
 import {
-  AlertTriangle,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  CheckCircle,
-  ChevronLeft,
-  ChevronRight,
-  Edit2,
-  Eye,
-  Filter,
-  Package,
-  Trash2,
-  XCircle
+    AlertTriangle,
+    ArrowDown,
+    ArrowUp,
+    ArrowUpDown,
+    CheckCircle,
+    ChevronLeft,
+    ChevronRight,
+    Edit2,
+    Package,
+    XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { SearchAutosuggest } from "../../components/ui/SearchAutosuggest";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../lib/api";
-import { getMasterData, getStoreInventory, getStores, getWarehouses, getWarehouseInventory } from "../../services/inventoryService";
+import { getMasterData, getStoreInventory, getStores, getWarehouseInventory, getWarehouses } from "../../services/inventoryService";
 
 interface ProductEntry {
   id: number;
