@@ -322,7 +322,11 @@ export async function getProducts(
 
 /** POST /products — Create a product (if endpoint exists) */
 export async function createProduct(
-  data: Partial<Product> & { opening_stock?: Array<{ warehouse_id: number; quantity: number }> }
+  data: Partial<Product> & {
+    opening_stock?: Array<{ warehouse_id: number; quantity: number }>;
+    supplierId?: number | null;
+    supplier_id?: number | null;
+  }
 ): Promise<{ id: number; sku: string; name: string; message: string }> {
   return apiFetch("/products", {
     method: "POST",

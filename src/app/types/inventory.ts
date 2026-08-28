@@ -623,8 +623,17 @@ export interface Product {
   sku: string;
   barcode?: string;
   category?: string;
+  /** Optional sub-category under category. */
+  sub_category?: string | null;
+  subCategory?: string | null;
   brand?: string;
+  /** Product model name/number (after brand on Add Product). */
+  model?: string | null;
   unit?: string;
+  /** Default supplier for this product (FK → /suppliers). */
+  supplier_id?: number | null;
+  supplierId?: number | null;
+  supplier_name?: string | null;
   cost_price: number;
   selling_price: number;
   tax_rate?: number;
