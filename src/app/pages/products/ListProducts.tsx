@@ -6,6 +6,7 @@ import {
     CheckCircle,
     ChevronLeft,
     ChevronRight,
+    Download,
     Edit2,
     Package,
     XCircle
@@ -35,6 +36,15 @@ interface LocationEntry {
 
 function fmtZAR(val: number) {
   return `R ${val.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Escape a CSV cell so Excel opens the file correctly. */
+function csvEscape(value: string | number | null | undefined): string {
+  const raw = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(raw)) {
+    return `"${raw.replace(/"/g, '""')}"`;
+  }
+  return raw;
 }
 
 export function ListProducts() {
@@ -289,6 +299,71 @@ export function ListProducts() {
     return { total, inStock, lowStock, outOfStock };
   }, [processedProducts]);
 
+  /** Download every loaded product (with stock details) as .csv for Excel. */
+  const exportProductsCsv = () => {
+    const rows = products.map((p) => {
+      const quantity = getProductQty(p.sku);
+      const statusLabel = getStockStatus(quantity).label;
+      return {
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        category: p.category || "",
+        costPrice: Number(p.costPrice ?? 0).toFixed(2),
+        sellingPrice: Number(p.sellingPrice ?? 0).toFixed(2),
+        taxPercent: Number(p.taxPercent ?? 0),
+        quantity,
+        status: statusLabel,
+        location: warehouseFilter,
+      };
+    });
+
+    const headers = [
+      "ID",
+      "SKU",
+      "Product Name",
+      "Category",
+      "Cost Price (ZAR)",
+      "Selling Price (ZAR)",
+      "Tax %",
+      "Quantity",
+      "Stock Status",
+      "Location Filter",
+    ];
+
+    const lines = [
+      headers.join(","),
+      ...rows.map((r) =>
+        [
+          csvEscape(r.id),
+          csvEscape(r.sku),
+          csvEscape(r.name),
+          csvEscape(r.category),
+          csvEscape(r.costPrice),
+          csvEscape(r.sellingPrice),
+          csvEscape(r.taxPercent),
+          csvEscape(r.quantity),
+          csvEscape(r.status),
+          csvEscape(r.location),
+        ].join(",")
+      ),
+    ];
+
+    // BOM helps Excel recognize UTF-8 correctly
+    const blob = new Blob(["\uFEFF" + lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `products-export-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-4 bg-white min-h-screen">
       {/* Breadcrumb */}
@@ -310,6 +385,15 @@ export function ListProducts() {
             className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600"
           >
             Refresh
+          </button>
+          <button
+            type="button"
+            onClick={exportProductsCsv}
+            disabled={isLoading || products.length === 0}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Download all products as CSV for Excel"
+          >
+            <Download size={15} /> Export
           </button>
           {isAdmin && (
             <Link
