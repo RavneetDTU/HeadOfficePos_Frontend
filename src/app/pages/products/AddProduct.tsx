@@ -2,10 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Package,
-  Plus,
-  Trash2,
   Upload,
-  Building2,
   Tag,
   DollarSign,
   ChevronDown,
@@ -19,20 +16,19 @@ import {
   COMMON_FX_CURRENCIES,
   convertToZar,
 } from "../../lib/frankfurter";
+import {
+  localProductImageRef,
+  saveProductImage,
+} from "../../lib/productImages";
 import { createProduct, getSuppliers, getWarehouses } from "../../services/inventoryService";
 import type { SupplierOut } from "../../types/inventory";
-
-interface StockEntry {
-  warehouseId: number;
-  qty: number;
-}
 
 export function AddProduct() {
   const navigate = useNavigate();
 
   // Meta States
-  const [dbWarehouses, setDbWarehouses] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOut[]>([]);
+  const [defaultWarehouseId, setDefaultWarehouseId] = useState<number | null>(null);
   const [isLoadingMeta, setIsLoadingMeta] = useState(true);
 
   // Form States
@@ -45,6 +41,7 @@ export function AddProduct() {
     model: "",
     supplierId: "",
     unit: "Unit",
+    quantity: "0",
     costPrice: "",
     salePrice: "",
     tax: "No Tax",
@@ -53,8 +50,6 @@ export function AddProduct() {
     status: "Active",
     alertQty: "",
   });
-
-  const [stockEntries, setStockEntries] = useState<StockEntry[]>([]);
 
   // Action States
   const [isSaving, setIsSaving] = useState(false);
@@ -72,10 +67,69 @@ export function AddProduct() {
 
   // Product image upload
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
+  const pendingImageFileRef = useRef<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
   const [imageFileName, setImageFileName] = useState("");
   const [imageError, setImageError] = useState("");
-  const [imageProcessing, setImageProcessing] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+  }, []);
+
+  const MAX_IMAGE_URL_LENGTH = 500;
+
+  const isAllowedImageFile = (file: File): boolean => {
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/pjpeg"];
+    if (allowedTypes.includes(file.type) || file.type.startsWith("image/")) return true;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    return !!ext && ["png", "jpg", "jpeg", "webp"].includes(ext);
+  };
+
+  const setPreviewObjectUrl = (file: File) => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+    }
+    const objectUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objectUrl;
+    setImagePreview(objectUrl);
+  };
+
+  const clearProductImage = () => {
+    pendingImageFileRef.current = null;
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+    setImagePreview("");
+    setImageFileName("");
+    setImageError("");
+    updateField("imageUrl", "");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleImageFile = (file: File | undefined | null) => {
+    if (!file) return;
+    setImageError("");
+
+    if (!isAllowedImageFile(file)) {
+      setImageError("Only PNG, JPG, or WEBP images are allowed.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError("Image must be 5MB or smaller.");
+      return;
+    }
+
+    pendingImageFileRef.current = file;
+    setImageFileName(file.name);
+    setPreviewObjectUrl(file);
+    updateField("imageUrl", "");
+  };
 
   const categories = ["Hearing Aids", "Accessories", "Batteries", "Services", "Other"];
   const brands = ["Phonak", "Signia", "Oticon", "Widex", "Resound", "Starkey", "Internal", "Other"];
@@ -120,88 +174,18 @@ export function AddProduct() {
     updateField("costPrice", fxZar.toFixed(2));
   };
 
-  /** Resize selected image and return a data URL suitable for preview + imageUrl. */
-  const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Failed to read image file."));
-      reader.onload = () => {
-        const src = String(reader.result || "");
-        const img = new Image();
-        img.onload = () => {
-          const maxSide = 800;
-          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-          const w = Math.max(1, Math.round(img.width * scale));
-          const h = Math.max(1, Math.round(img.height * scale));
-          const canvas = document.createElement("canvas");
-          canvas.width = w;
-          canvas.height = h;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            resolve(src);
-            return;
-          }
-          ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL("image/jpeg", 0.82));
-        };
-        img.onerror = () => reject(new Error("Invalid image file."));
-        img.src = src;
-      };
-      reader.readAsDataURL(file);
-    });
-
-  const clearProductImage = () => {
-    setImagePreview("");
-    setImageFileName("");
-    setImageError("");
-    updateField("imageUrl", "");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const handleImageFile = async (file: File | undefined | null) => {
-    if (!file) return;
-    setImageError("");
-
-    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
-    if (!allowed.includes(file.type)) {
-      setImageError("Only PNG, JPG, or WEBP images are allowed.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError("Image must be 5MB or smaller.");
-      return;
-    }
-
-    setImageProcessing(true);
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      setImagePreview(dataUrl);
-      setImageFileName(file.name);
-      updateField("imageUrl", dataUrl);
-    } catch (e) {
-      console.error("Image upload failed:", e);
-      setImageError(e instanceof Error ? e.message : "Failed to process image.");
-      clearProductImage();
-    } finally {
-      setImageProcessing(false);
-    }
-  };
-
-  // Fetch warehouses + suppliers on mount
+  // Fetch suppliers and default warehouse on mount
   useEffect(() => {
     const fetchMeta = async () => {
       try {
-        const [whs, supplierRes] = await Promise.all([
-          getWarehouses(),
+        const [supplierRes, whs] = await Promise.all([
           getSuppliers({ page: 1, limit: 100, status: "Active" }).catch(() => ({
             suppliers: [] as SupplierOut[],
           })),
+          getWarehouses().catch(() => []),
         ]);
-        setDbWarehouses(whs);
         setSuppliers(supplierRes.suppliers ?? []);
-        if (whs.length > 0) {
-          setStockEntries([{ warehouseId: whs[0].id, qty: 0 }]);
-        }
+        if (whs.length > 0) setDefaultWarehouseId(whs[0].id);
       } catch (e) {
         console.error("Failed to load product meta:", e);
       } finally {
@@ -214,20 +198,6 @@ export function AddProduct() {
   const updateField = (field: string, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  const addStockEntry = () => {
-    if (dbWarehouses.length > 0) {
-      setStockEntries((prev) => [...prev, { warehouseId: dbWarehouses[0].id, qty: 0 }]);
-    }
-  };
-
-  const updateStockEntry = (idx: number, key: keyof StockEntry, val: number) =>
-    setStockEntries((prev) =>
-      prev.map((e, i) => (i === idx ? { ...e, [key]: val } : e))
-    );
-
-  const removeStockEntry = (idx: number) =>
-    setStockEntries((prev) => prev.filter((_, i) => i !== idx));
-
   const resetForm = () => {
     setForm({
       name: "",
@@ -238,6 +208,7 @@ export function AddProduct() {
       model: "",
       supplierId: "",
       unit: "Unit",
+      quantity: "0",
       costPrice: "",
       salePrice: "",
       tax: "No Tax",
@@ -249,10 +220,12 @@ export function AddProduct() {
     setImagePreview("");
     setImageFileName("");
     setImageError("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (dbWarehouses.length > 0) {
-      setStockEntries([{ warehouseId: dbWarehouses[0].id, qty: 0 }]);
+    pendingImageFileRef.current = null;
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
     }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -262,44 +235,49 @@ export function AddProduct() {
       return;
     }
 
+    const quantity = Math.max(0, Math.floor(Number(form.quantity) || 0));
+    if (quantity > 0 && !defaultWarehouseId) {
+      setError("No warehouse found to store opening quantity. Add a warehouse first.");
+      return;
+    }
+
     setIsSaving(true);
     setError("");
     setSuccess(false);
 
     try {
-      // Build opening stock array with proper warehouse IDs
-      const openingStock = stockEntries
-        .filter((entry) => entry.qty > 0)
-        .map((entry) => ({
-          warehouse_id: entry.warehouseId,
-          quantity: entry.qty,
-        }));
+      const sku = form.code.trim();
 
-      const supplierIdNum = form.supplierId ? Number(form.supplierId) : undefined;
+      let imageUrl: string | undefined;
+      if (pendingImageFileRef.current) {
+        await saveProductImage(sku, pendingImageFileRef.current);
+        imageUrl = localProductImageRef(sku);
+      } else if (form.imageUrl.trim().startsWith("http")) {
+        imageUrl = form.imageUrl.trim().slice(0, MAX_IMAGE_URL_LENGTH);
+      }
 
       const payload = {
         name: form.name.trim(),
         sku: form.code.trim(),
         category: form.category || undefined,
-        subCategory: form.subCategory.trim() || undefined,
-        sub_category: form.subCategory.trim() || undefined,
         brand: form.brand || undefined,
         model: form.model.trim() || undefined,
         unit: form.unit || undefined,
-        // Send both casings so either backend style accepts the supplier link.
-        supplierId: supplierIdNum,
-        supplier_id: supplierIdNum,
-        cost_price: Number(form.costPrice) || 0,
-        selling_price: Number(form.salePrice) || 0,
-        tax_rate: form.tax === "VAT 15%" ? 15 : 0,
+        costPrice: Number(form.costPrice) || 0,
+        sellingPrice: Number(form.salePrice) || 0,
+        taxPercent: form.tax === "VAT 15%" ? 15 : 0,
         description: form.description || undefined,
-        image_url: form.imageUrl || undefined,
-        alert_qty: Number(form.alertQty) || undefined,
+        imageUrl,
+        alertQty: Number(form.alertQty) || undefined,
         status: form.status as "Active" | "Inactive",
-        opening_stock: openingStock.length > 0 ? openingStock : undefined,
+        openingStock:
+          quantity > 0 && defaultWarehouseId
+            ? [{ warehouseId: defaultWarehouseId, quantity }]
+            : undefined,
       };
 
       await createProduct(payload);
+      pendingImageFileRef.current = null;
       setSuccess(true);
       setTimeout(() => {
         navigate("/products");
@@ -465,6 +443,18 @@ export function AddProduct() {
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.quantity}
+                  onChange={(e) => updateField("quantity", e.target.value)}
+                  placeholder="0"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
             </div>
           </div>
 
@@ -617,64 +607,6 @@ export function AddProduct() {
               
             </div>
           </div>
-
-          {/* Warehouse Stock */}
-          <div className="bg-white border border-gray-200 rounded-lg p-5">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <Building2 size={16} className="text-purple-600" />
-                <h2 className="text-sm font-semibold text-gray-800">Opening Stock by Warehouse</h2>
-              </div>
-              <button
-                type="button"
-                onClick={addStockEntry}
-                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium animate-pulse"
-              >
-                <Plus size={13} /> Add Warehouse
-              </button>
-            </div>
-            <div className="space-y-2">
-              {stockEntries.map((entry, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <select
-                        value={entry.warehouseId}
-                        onChange={(e) => updateStockEntry(i, "warehouseId", Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 appearance-none bg-white"
-                      >
-                        {dbWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
-                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
-                  </div>
-                  <div className="w-28">
-                    <input
-                      type="number"
-                      value={entry.qty}
-                      onChange={(e) => updateStockEntry(i, "qty", parseInt(e.target.value) || 0)}
-                      placeholder="Qty"
-                      min={0}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-center"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeStockEntry(i)}
-                    disabled={stockEntries.length === 1}
-                    className="p-1.5 rounded hover:bg-red-50 text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 pt-3 border-t border-gray-100">
-              <p className="text-xs text-gray-500">
-                Total Opening Stock: <span className="font-semibold text-gray-900">{stockEntries.reduce((acc, e) => acc + Number(e.qty), 0)} units</span>
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* Right sidebar */}
@@ -687,7 +619,11 @@ export function AddProduct() {
               type="file"
               accept="image/png,image/jpeg,image/jpg,image/webp"
               className="hidden"
-              onChange={(e) => handleImageFile(e.target.files?.[0])}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                void handleImageFile(file);
+                e.target.value = "";
+              }}
             />
 
             {imagePreview || (form.imageUrl && form.imageUrl.startsWith("http")) ? (
@@ -715,7 +651,6 @@ export function AddProduct() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={imageProcessing}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -725,16 +660,10 @@ export function AddProduct() {
                   e.stopPropagation();
                   handleImageFile(e.dataTransfer.files?.[0]);
                 }}
-                className="w-full border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-blue-300 transition-colors cursor-pointer disabled:opacity-60"
+                className="w-full border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-blue-300 transition-colors cursor-pointer"
               >
-                {imageProcessing ? (
-                  <Loader2 size={24} className="text-blue-500 mx-auto mb-2 animate-spin" />
-                ) : (
-                  <Upload size={24} className="text-gray-300 mx-auto mb-2" />
-                )}
-                <p className="text-xs text-gray-500">
-                  {imageProcessing ? "Processing image…" : "Click to upload"}
-                </p>
+                <Upload size={24} className="text-gray-300 mx-auto mb-2" />
+                <p className="text-xs text-gray-500">Click to upload</p>
                 <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP up to 5MB</p>
               </button>
             )}
@@ -755,13 +684,22 @@ export function AddProduct() {
                   setImageFileName("");
                   setImageError("");
                   setImagePreview("");
+                  pendingImageFileRef.current = null;
+                  if (previewObjectUrlRef.current) {
+                    URL.revokeObjectURL(previewObjectUrlRef.current);
+                    previewObjectUrlRef.current = null;
+                  }
+                  if (url.length > MAX_IMAGE_URL_LENGTH) {
+                    setImageError(`Image URL must be ${MAX_IMAGE_URL_LENGTH} characters or fewer.`);
+                    return;
+                  }
                   updateField("imageUrl", url);
                 }}
                 placeholder="https://..."
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               />
               <p className="mt-1 text-[11px] text-gray-400">
-                Uploaded files are attached as the product image on save.
+                Uploaded files are saved in this browser and linked to the product SKU.
               </p>
             </div>
           </div>
@@ -802,12 +740,16 @@ export function AddProduct() {
                 <span className="font-medium text-right max-w-36 truncate">{selectedSupplierLabel}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-blue-200">Sale Price</span>
-                <span className="font-medium">{form.salePrice ? `R ${form.salePrice}` : "—"}</span>
+                <span className="text-blue-200">Unit</span>
+                <span className="font-medium">{form.unit || "—"}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-blue-200">Total Stock</span>
-                <span className="font-medium">{stockEntries.reduce((acc, e) => acc + Number(e.qty), 0)} units</span>
+                <span className="text-blue-200">Quantity</span>
+                <span className="font-medium">{form.quantity || "0"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-blue-200">Sale Price</span>
+                <span className="font-medium">{form.salePrice ? `R ${form.salePrice}` : "—"}</span>
               </div>
             </div>
           </div>

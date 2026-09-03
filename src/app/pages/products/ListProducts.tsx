@@ -9,14 +9,27 @@ import {
     Download,
     Edit2,
     Package,
+    Printer,
     XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { SearchAutosuggest } from "../../components/ui/SearchAutosuggest";
+import { ProductLabelModal } from "../../components/products/ProductLabelModal";
 import { useAuth } from "../../context/AuthContext";
-import { apiFetch } from "../../lib/api";
-import { getMasterData, getStoreInventory, getStores, getWarehouseInventory, getWarehouses } from "../../services/inventoryService";
+import {
+  getProductImageObjectUrl,
+  isLocalProductImageRef,
+  parseLocalProductImageRef,
+} from "../../lib/productImages";
+import {
+  getProducts,
+  getSalesStock,
+  getStoreInventory,
+  getStores,
+  getWarehouseInventory,
+  getWarehouses,
+} from "../../services/inventoryService";
 
 interface ProductEntry {
   id: number;
@@ -26,6 +39,7 @@ interface ProductEntry {
   costPrice: number;
   sellingPrice: number;
   taxPercent: number;
+  imageUrl?: string;
 }
 
 interface LocationEntry {
@@ -35,7 +49,7 @@ interface LocationEntry {
 }
 
 function fmtZAR(val: number) {
-  return `R ${val.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `R ${Number(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Escape a CSV cell so Excel opens the file correctly. */
@@ -74,14 +88,16 @@ export function ListProducts() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const [viewProduct, setViewProduct] = useState<(ProductEntry & { quantity: number; statusLabel: string }) | null>(null);
+  const [labelProduct, setLabelProduct] = useState<ProductEntry | null>(null);
+  const [localImageUrls, setLocalImageUrls] = useState<Record<string, string>>({});
 
   // Load Data from backend APIs
   const loadData = async () => {
     setIsLoading(true);
     setError("");
     try {
-      const [masterData, whs, sts] = await Promise.all([
-        getMasterData(),
+      const [productRes, whs, sts] = await Promise.all([
+        getProducts(),
         getWarehouses().catch(() => []),
         getStores().catch(() => []),
       ]);
@@ -92,16 +108,16 @@ export function ListProducts() {
       ];
       setLocations(combinedLocs);
 
-      // Strategy: use /warehouse/1/inventory as the base stock for ALL products,
-      // then override with /sales/stock values for the subset of products that are
-      // tracked there (they are more accurate for those SKUs).
-      // This ensures every product has a real number, and there is no hardcoded fallback.
+      // Live qty source of truth: GET /sales/stock (decrements on sales).
+      // /warehouse/{id}/inventory often keeps opening stock and does not drop after sales.
+      // Prefer sales/stock first; fall back to warehouse inventory / product.totalStock.
       const primaryWarehouse = whs[0];
       const [whInvResult, salesStockRaw, ...storeInventories] = await Promise.all([
         primaryWarehouse
           ? getWarehouseInventory({ warehouse_id: primaryWarehouse.id }).catch(() => ({ items: [] }))
           : Promise.resolve({ items: [] as any[] }),
-        apiFetch<any[]>("/sales/stock").catch(() => []),
+        // Same unscoped endpoint Add Sale / Stock Table use for post-sale quantities.
+        getSalesStock().catch(() => [] as any[]),
         ...sts.map((s) =>
           getStoreInventory(s.id)
             .then((res) => ({ storeName: s.name, items: res.items }))
@@ -109,46 +125,74 @@ export function ListProducts() {
         ),
       ]);
 
+      const liveStock = Array.isArray(salesStockRaw) ? salesStockRaw : [];
+
       const map: Record<string, number> = {};
       const whMap: Record<string, number> = {};
+      const liveSkus = new Set<string>();
 
-      // Step 1: Seed whMap from /warehouse/{id}/inventory (covers ALL products)
       const whLocName = (primaryWarehouse?.name ?? "head office warehouse").toLowerCase().trim();
+
+      // Step 1: Prefer live /sales/stock (post-sale quantities)
+      for (const item of liveStock as Record<string, unknown>[]) {
+        const sku = String(item.sku ?? item.productSku ?? "")
+          .trim()
+          .toLowerCase();
+        const qty = Number(
+          item.available ??
+            item.availableQty ??
+            item.inStock ??
+            item.quantity ??
+            0
+        );
+        if (!sku) continue;
+        liveSkus.add(sku);
+        // If duplicate rows exist for the same SKU, keep the lowest qty so a
+        // deducted live row is not overwritten by a stale higher value.
+        if (whMap[sku] === undefined || qty < whMap[sku]) {
+          whMap[sku] = qty;
+        }
+        const loc = String(item.warehouse ?? item.warehouseName ?? "")
+          .trim()
+          .toLowerCase();
+        if (loc) {
+          map[`${sku}_${loc}`] = qty;
+          if (loc === "head office" || loc.includes("head office")) {
+            map[`${sku}_head office`] = qty;
+            map[`${sku}_head office warehouse`] = qty;
+          }
+        } else if (whLocName) {
+          map[`${sku}_${whLocName}`] = qty;
+        }
+      }
+
+      // Step 2: Warehouse inventory only for SKUs missing from live sales/stock
       for (const item of whInvResult.items) {
         const sku = String(item.sku || "").trim().toLowerCase();
         const qty = Number(item.available_qty ?? item.quantity ?? 0);
-        if (sku && qty > 0) {
-          whMap[sku] = qty;
-          map[`${sku}_${whLocName}`] = qty;
-          if (whLocName.includes("head office")) {
-            map[`${sku}_head office`] = qty;
-          }
+        if (!sku || liveSkus.has(sku)) continue;
+        whMap[sku] = qty;
+        map[`${sku}_${whLocName}`] = qty;
+        if (whLocName.includes("head office")) {
+          map[`${sku}_head office`] = qty;
         }
       }
 
-      // Step 2: Override with /sales/stock values where they exist — these are more
-      // accurate for the subset of products tracked through the sales flow.
-      for (const item of salesStockRaw) {
-        const sku = String(item.sku || "").trim().toLowerCase();
-        const loc = String(item.warehouse || "").trim().toLowerCase();
-        const qty = Number(item.inStock ?? item.available ?? 0);
-        if (sku) {
-          whMap[sku] = qty;  // override with real-time sales/stock value
-          if (loc) {
-            map[`${sku}_${loc}`] = qty;
-            if (loc === "head office") {
-              map[`${sku}_head office warehouse`] = qty;
-            }
-          }
+      // Step 3: Product.totalStock fallback for SKUs still missing
+      for (const p of productRes.products) {
+        const sku = String(p.sku || "").trim().toLowerCase();
+        if (!sku || whMap[sku] !== undefined) continue;
+        if (p.total_stock != null && Number.isFinite(Number(p.total_stock))) {
+          whMap[sku] = Number(p.total_stock);
         }
       }
 
-      // Step 3: Store inventories (per-location map only, not the default view)
+      // Step 4: Store inventories (per-location map only, not the default view)
       for (const storeInv of storeInventories) {
         const locName = storeInv.storeName.toLowerCase().trim();
         for (const item of storeInv.items) {
-          const sku = item.sku.toLowerCase().trim();
-          const qty = item.quantity;
+          const sku = String(item.sku || "").toLowerCase().trim();
+          const qty = Number(item.quantity ?? 0);
           if (sku && locName) {
             map[`${sku}_${locName}`] = (map[`${sku}_${locName}`] || 0) + qty;
           }
@@ -157,7 +201,18 @@ export function ListProducts() {
 
       setWarehouseMap(whMap);
       setStockMap(map);
-      setProducts(masterData.products);
+      setProducts(
+        productRes.products.map((p) => ({
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          category: p.category,
+          costPrice: Number(p.cost_price ?? 0),
+          sellingPrice: Number(p.selling_price ?? 0),
+          taxPercent: Number(p.tax_rate ?? 0),
+          imageUrl: p.image_url,
+        }))
+      );
     } catch (e) {
       console.error("Failed to load products list:", e);
       setError("Failed to load products and stock levels.");
@@ -170,16 +225,55 @@ export function ListProducts() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const objectUrls: string[] = [];
+
+    const loadLocalImages = async () => {
+      const entries: Record<string, string> = {};
+      for (const product of products) {
+        if (!isLocalProductImageRef(product.imageUrl)) continue;
+        const sku =
+          parseLocalProductImageRef(product.imageUrl) ?? product.sku;
+        const url = await getProductImageObjectUrl(sku);
+        if (url) {
+          objectUrls.push(url);
+          entries[product.sku] = url;
+        }
+      }
+      if (!cancelled) setLocalImageUrls(entries);
+    };
+
+    if (products.length > 0) {
+      void loadLocalImages();
+    } else {
+      setLocalImageUrls({});
+    }
+
+    return () => {
+      cancelled = true;
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [products]);
+
+  const resolveProductImageSrc = (product: ProductEntry): string | undefined => {
+    if (isLocalProductImageRef(product.imageUrl)) {
+      return localImageUrls[product.sku];
+    }
+    return product.imageUrl;
+  };
+
   // Compute quantity based on selected location
   const getProductQty = (sku: string): number => {
+    const skuKey = sku.trim().toLowerCase();
     if (warehouseFilter && warehouseFilter !== "All Locations") {
       // Specific location selected — look up per-location map
-      const key = `${sku.trim()}_${warehouseFilter.toLowerCase().trim()}`;
+      const key = `${skuKey}_${warehouseFilter.toLowerCase().trim()}`;
       return stockMap[key] ?? 0;
     }
 
-    // Default: show warehouse stock only (decreases as transfers are made)
-    return warehouseMap[sku.trim().toLowerCase()] ?? 0;
+    // Default: live warehouse stock (from /sales/stock when available)
+    return warehouseMap[skuKey] ?? 0;
   };
 
   // Helper for stock status
@@ -476,6 +570,9 @@ export function ListProducts() {
           <table className="w-full min-w-max">
             <thead className="bg-blue-600 text-white">
               <tr>
+                <th className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap w-14">
+                  Image
+                </th>
                 <th
                   onClick={() => handleSort("name")}
                   className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap cursor-pointer hover:bg-blue-700 select-none"
@@ -511,6 +608,9 @@ export function ListProducts() {
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
                     <td className="px-4 py-4">
+                      <div className="h-10 w-10 bg-gray-200 rounded-lg" />
+                    </td>
+                    <td className="px-4 py-4">
                       <div className="h-4 bg-gray-200 rounded w-48 mb-2" />
                       <div className="h-3 bg-gray-100 rounded w-20" />
                     </td>
@@ -530,17 +630,32 @@ export function ListProducts() {
                 ))
               ) : paginatedProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-16 text-center">
+                  <td colSpan={6} className="px-4 py-16 text-center">
                     <Package size={40} className="text-gray-200 mx-auto mb-3" />
                     <p className="text-gray-400 text-sm">No products found matching your filters</p>
                   </td>
                 </tr>
               ) : (
-                paginatedProducts.map((p, i) => (
+                paginatedProducts.map((p, i) => {
+                  const imageSrc = resolveProductImageSrc(p);
+                  return (
                   <tr
                     key={p.id}
                     className={`hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
                   >
+                    <td className="px-4 py-3">
+                      {imageSrc ? (
+                        <img
+                          src={imageSrc}
+                          alt={p.name}
+                          className="h-10 w-10 rounded-lg object-cover border border-gray-200 bg-white"
+                        />
+                      ) : (
+                        <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center border border-gray-100">
+                          <Package size={18} className="text-blue-600" />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900">{p.name}</p>
                       <p className="text-xs text-gray-500 font-mono bg-gray-100/80 inline-block px-1 rounded mt-0.5">{p.sku}</p>
@@ -556,6 +671,14 @@ export function ListProducts() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setLabelProduct(p)}
+                          className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors"
+                          title="Print barcode label"
+                        >
+                          <Printer size={14} />
+                        </button>
                         {isAdmin && (
                           <button className="p-1.5 rounded hover:bg-gray-100 text-gray-900 transition-colors" title="Edit">
                             <Edit2 size={14} />
@@ -564,7 +687,8 @@ export function ListProducts() {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -599,7 +723,9 @@ export function ListProducts() {
       </div>
 
       {/* View Product Modal */}
-      {viewProduct && (
+      {viewProduct && (() => {
+        const viewImageSrc = resolveProductImageSrc(viewProduct);
+        return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
@@ -610,9 +736,17 @@ export function ListProducts() {
             </div>
             <div className="p-5 space-y-3">
               <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
-                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-                  <Package size={24} className="text-blue-600" />
-                </div>
+                {viewImageSrc ? (
+                  <img
+                    src={viewImageSrc}
+                    alt={viewProduct.name}
+                    className="w-12 h-12 rounded-xl object-cover border border-gray-200"
+                  />
+                ) : (
+                  <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+                    <Package size={24} className="text-blue-600" />
+                  </div>
+                )}
                 <div>
                   <p className="font-semibold text-gray-900 text-sm">{viewProduct.name}</p>
                   <p className="text-xs text-gray-500">{viewProduct.sku}</p>
@@ -642,6 +776,18 @@ export function ListProducts() {
             </div>
           </div>
         </div>
+        );
+      })()}
+
+      {labelProduct && (
+        <ProductLabelModal
+          product={{
+            name: labelProduct.name,
+            sku: labelProduct.sku,
+            sellingPrice: labelProduct.sellingPrice,
+          }}
+          onClose={() => setLabelProduct(null)}
+        />
       )}
     </div>
   );

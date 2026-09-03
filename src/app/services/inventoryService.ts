@@ -29,6 +29,11 @@ import type {
     InventoryLedgerOut,
     MasterDataResponse,
     Product,
+    ProductCreatePayload,
+    ProductListParams,
+    ProductListResponse,
+    ProductResponse,
+    ProductsResponse,
     PurchaseOverview,
     PurchaseReturnOut,
     RefundOut,
@@ -297,57 +302,138 @@ export async function createStore(
 
 // ─── Products ─────────────────────────────────────────────────────────────────
 
-/** GET /master-data — retrieve products list (from master data) */
-export async function getProducts(
-  _params: Record<string, string | number | undefined> = {}
-): Promise<{ products: Product[]; total: number; total_pages: number; current_page: number }> {
-  const data = await getMasterData();
-  const products: Product[] = data.products.map((p) => ({
-    id: p.id,
-    name: p.name,
-    sku: p.sku,
-    cost_price: p.costPrice,
-    selling_price: p.sellingPrice,
-    tax_rate: p.taxPercent,
-    status: "Active" as const,
-    created_at: new Date().toISOString(),
-  }));
+function mapProductResponse(raw: Record<string, unknown>): Product {
   return {
-    products,
-    total: products.length,
-    total_pages: 1,
-    current_page: 1,
+    id: (raw.id as number) ?? 0,
+    name: (raw.name as string) ?? "",
+    sku: (raw.sku as string) ?? "",
+    category: (raw.category as string) ?? undefined,
+    brand: (raw.brand as string) ?? undefined,
+    unit: (raw.unit as string) ?? undefined,
+    cost_price: Number(raw.costPrice ?? raw.cost_price ?? 0),
+    selling_price: Number(raw.sellingPrice ?? raw.selling_price ?? 0),
+    tax_rate: Number(raw.taxPercent ?? raw.tax_rate ?? raw.tax_percent ?? 0),
+    description: (raw.description as string) ?? undefined,
+    image_url: ((raw.imageUrl ?? raw.image_url) as string) ?? undefined,
+    alert_qty: Number(raw.alertQty ?? raw.alert_qty ?? 0),
+    total_stock:
+      raw.totalStock != null || raw.total_stock != null
+        ? Number(raw.totalStock ?? raw.total_stock)
+        : undefined,
+    status: ((raw.status as string) ?? "Active") as "Active" | "Inactive",
+    created_at:
+      (raw.createdAt as string) ??
+      (raw.created_at as string) ??
+      new Date().toISOString(),
   };
 }
 
-/** POST /products — Create a product (if endpoint exists) */
-export async function createProduct(
-  data: Partial<Product> & {
-    opening_stock?: Array<{ warehouse_id: number; quantity: number }>;
-    supplierId?: number | null;
-    supplier_id?: number | null;
+function productListQuery(params: ProductListParams = {}): string {
+  return buildQuery({
+    page: params.page ?? 1,
+    limit: params.limit ?? 100,
+    search: params.search || undefined,
+    category: params.category || undefined,
+    brand: params.brand || undefined,
+    status: params.status && params.status !== "All" ? params.status : undefined,
+  });
+}
+
+/** GET /products — paginated product catalog (auto-fetches all pages when unpaginated). */
+export async function getProducts(
+  params: ProductListParams = {}
+): Promise<ProductsResponse> {
+  const limit = params.limit ?? 100;
+  const first = await apiFetch<ProductListResponse>(
+    `/products${productListQuery({ ...params, page: 1, limit })}`
+  );
+  const items: ProductResponse[] = [...(first.items ?? [])];
+
+  if ((first.pages ?? 1) > 1 && !params.page) {
+    const pageRequests = Array.from({ length: first.pages - 1 }, (_, i) =>
+      apiFetch<ProductListResponse>(
+        `/products${productListQuery({ ...params, page: i + 2, limit })}`
+      )
+    );
+    const rest = await Promise.all(pageRequests);
+    for (const page of rest) {
+      items.push(...(page.items ?? []));
+    }
   }
+
+  return {
+    products: items.map((p) => mapProductResponse(p as unknown as Record<string, unknown>)),
+    total: first.total ?? items.length,
+    total_pages: first.pages ?? 1,
+    current_page: params.page ?? 1,
+  };
+}
+
+/** Normalize create payload to live API camelCase (ProductCreate). */
+function normalizeProductCreate(data: Record<string, unknown>): ProductCreatePayload {
+  const openingRaw = (data.openingStock ?? data.opening_stock) as
+    | Array<Record<string, unknown>>
+    | undefined;
+
+  const openingStock = openingRaw
+    ?.map((item) => ({
+      warehouseId: Number(item.warehouseId ?? item.warehouse_id),
+      quantity: Number(item.quantity),
+    }))
+    .filter((item) => item.warehouseId > 0 && item.quantity > 0);
+
+  const imageUrl = (data.imageUrl ?? data.image_url) as string | undefined;
+
+  return {
+    sku: String(data.sku ?? "").trim(),
+    name: String(data.name ?? "").trim(),
+    category: (data.category as string) || undefined,
+    brand: (data.brand as string) || undefined,
+    unit: (data.unit as string) || undefined,
+    costPrice: Number(data.costPrice ?? data.cost_price ?? 0),
+    sellingPrice: Number(data.sellingPrice ?? data.selling_price ?? 0),
+    taxPercent: Number(data.taxPercent ?? data.tax_rate ?? data.tax_percent ?? 0),
+    description: (data.description as string) || undefined,
+    imageUrl: imageUrl || undefined,
+    status: (data.status as string) || "Active",
+    alertQty:
+      data.alertQty != null
+        ? Number(data.alertQty)
+        : data.alert_qty != null
+          ? Number(data.alert_qty)
+          : undefined,
+    openingStock: openingStock?.length ? openingStock : undefined,
+  };
+}
+
+/** POST /products — Create a product */
+export async function createProduct(
+  data: Record<string, unknown>
 ): Promise<{ id: number; sku: string; name: string; message: string }> {
+  const payload = normalizeProductCreate(data);
   return apiFetch("/products", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
 }
 
 /** GET /products/{id} — Get product by id */
 export async function getProduct(id: number): Promise<Product> {
-  return apiFetch<Product>(`/products/${id}`);
+  const raw = await apiFetch<Record<string, unknown>>(`/products/${id}`);
+  return mapProductResponse(raw);
 }
 
 /** PATCH /products/{id} — Update product */
 export async function updateProduct(
   id: number,
-  data: Partial<Product>
+  data: Record<string, unknown>
 ): Promise<Product> {
-  return apiFetch<Product>(`/products/${id}`, {
+  const payload = normalizeProductCreate(data);
+  const raw = await apiFetch<Record<string, unknown>>(`/products/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
+  return mapProductResponse(raw);
 }
 
 /** DELETE /products/{id} — Soft delete product */

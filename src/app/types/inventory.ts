@@ -615,6 +615,50 @@ export interface ProductsResponse {
   current_page: number;
 }
 
+/** Live GET /products list item (camelCase). */
+export interface ProductResponse {
+  id: number;
+  sku: string;
+  name: string;
+  category?: string | null;
+  brand?: string | null;
+  unit?: string;
+  costPrice: number;
+  sellingPrice: number;
+  taxPercent: number;
+  description?: string | null;
+  imageUrl?: string | null;
+  status: string;
+  alertQty?: number;
+  totalStock?: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface ProductListResponse {
+  items: ProductResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface ProductCreatePayload {
+  sku: string;
+  name: string;
+  category?: string | null;
+  brand?: string | null;
+  unit?: string;
+  costPrice?: number;
+  sellingPrice?: number;
+  taxPercent?: number;
+  description?: string | null;
+  imageUrl?: string | null;
+  status?: string;
+  alertQty?: number;
+  openingStock?: Array<{ warehouseId: number; quantity: number }>;
+}
+
 // ─── Products ─────────────────────────────────────────────────────────────────
 
 export interface Product {
@@ -640,6 +684,8 @@ export interface Product {
   description?: string;
   image_url?: string;
   alert_qty?: number;
+  /** Live total stock across warehouses when returned by GET /products. */
+  total_stock?: number;
   status: "Active" | "Inactive";
   created_at: string;
 }
