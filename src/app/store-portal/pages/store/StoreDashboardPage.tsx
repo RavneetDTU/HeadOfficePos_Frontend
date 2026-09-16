@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { fetchProductAvailability } from "@/app/store-portal/api/inventory";
-import { fetchOrders, orderStatusTone } from "@/app/store-portal/api/orders";
+import { fetchOrders, orderItemCount, orderStatusTone } from "@/app/store-portal/api/orders";
 import { fetchStoreDashboard } from "@/app/store-portal/api/dashboard";
 import type { BranchOrder } from "@/app/store-portal/types";
 import { useAuth } from "@/app/context/AuthContext";
@@ -167,7 +167,7 @@ export function StoreDashboardPage() {
                     <td className="px-4 py-3 text-slate-600">
                       {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-4 py-3">{o.items?.length ?? "—"}</td>
+                    <td className="px-4 py-3">{orderItemCount(o) || "—"}</td>
                     <td className="px-4 py-3">{fmtZAR(o.total)}</td>
                     <td className="px-4 py-3">
                       <Badge tone={orderStatusTone(o.status)}>{o.status}</Badge>

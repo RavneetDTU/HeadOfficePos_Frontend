@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { fetchStoreOrders, orderStatusTone } from "@/app/store-portal/api/orders";
+import { fetchStoreOrders, orderItemCount, orderStatusTone } from "@/app/store-portal/api/orders";
 import type { BranchOrder } from "@/app/store-portal/types";
 import { useAuth } from "@/app/context/AuthContext";
 import {
@@ -102,7 +102,7 @@ export function OrdersPage() {
                     <td className="px-4 py-3">
                       {o.createdAt ? new Date(o.createdAt).toLocaleString() : "—"}
                     </td>
-                    <td className="px-4 py-3">{o.items?.reduce((a, i) => a + i.quantity, 0) || "—"}</td>
+                    <td className="px-4 py-3">{orderItemCount(o) || "—"}</td>
                     <td className="px-4 py-3">{fmtZAR(o.total)}</td>
                     <td className="px-4 py-3">
                       <Badge tone={orderStatusTone(o.status)}>{o.status}</Badge>

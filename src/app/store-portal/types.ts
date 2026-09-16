@@ -144,6 +144,8 @@ export interface BranchOrder {
   tax: number;
   total: number;
   items: BranchOrderItem[];
+  /** Present on list responses when full `items` are omitted */
+  itemCount?: number;
   timeline?: OrderTimelineEvent[];
   saleId?: number | null;
   saleReference?: string | null;

@@ -1,11 +1,8 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { fetchOrders, orderStatusTone } from "@/app/store-portal/api/orders";
+import { fetchOrders, orderItemCount, orderStatusTone } from "@/app/store-portal/api/orders";
 import { fetchStores } from "@/app/store-portal/api/stores";
-import type { BranchOrder, Store } from "@/app/store-portal/types";
 import {
-  Badge,
   BackendBanner,
+  Badge,
   Card,
   EmptyState,
   ErrorState,
@@ -13,6 +10,9 @@ import {
   Skeleton,
 } from "@/app/store-portal/components/ui/primitives";
 import { fmtZAR } from "@/app/store-portal/lib/utils";
+import type { BranchOrder, Store } from "@/app/store-portal/types";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
 
 export function OrdersPage() {
   const [orders, setOrders] = useState<BranchOrder[]>([]);
@@ -55,7 +55,7 @@ export function OrdersPage() {
   }, [status, storeId]);
 
   return (
-    <div>
+    <div className="p-4 sm:p-6">
       <PageHeader title="Order queue" subtitle="All branch orders for Head Office processing" />
 
       {apiMissing && (
@@ -131,7 +131,7 @@ export function OrdersPage() {
                       {o.createdAt ? new Date(o.createdAt).toLocaleString() : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      {o.items?.reduce((a, i) => a + i.quantity, 0) ?? "—"}
+                      {orderItemCount(o) || "—"}
                     </td>
                     <td className="px-4 py-3">{fmtZAR(o.total)}</td>
                     <td className="px-4 py-3">{o.createdBy || "—"}</td>
@@ -140,7 +140,7 @@ export function OrdersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Link to={`/branch-orders/${o.id}`} className="text-teal-700">
-                        Open
+                        View
                       </Link>
                     </td>
                   </tr>

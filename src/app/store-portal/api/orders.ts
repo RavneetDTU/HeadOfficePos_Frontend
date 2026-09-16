@@ -34,6 +34,7 @@ function mapOrder(raw: Record<string, unknown>): BranchOrder {
     items.reduce((a, i) => a + i.subtotal, 0)
   );
   const tax = num(raw.tax, raw.taxTotal, raw.tax_total);
+  const itemCountFromApi = num(raw.itemCount, raw.item_count, raw.totalItems, raw.total_items);
   return {
     id: Number(raw.id ?? 0),
     reference: String(raw.reference ?? raw.orderNumber ?? raw.order_number ?? `ORD-${raw.id ?? "?"}`),
@@ -48,6 +49,7 @@ function mapOrder(raw: Record<string, unknown>): BranchOrder {
     tax,
     total: num(raw.total, raw.grandTotal, raw.grand_total, subtotal + tax),
     items,
+    itemCount: itemCountFromApi || items.length || undefined,
     timeline: Array.isArray(raw.timeline)
       ? (raw.timeline as Record<string, unknown>[]).map((t) => ({
           oldStatus: (t.oldStatus ?? t.old_status) as string | null | undefined,
@@ -188,6 +190,7 @@ function orderFromTransfer(transfer: {
     quantity: number;
     purchasePrice: number;
   }>;
+  itemCount?: number;
   totalValue?: number;
 }): BranchOrder {
   const items: BranchOrderItem[] = (transfer.items ?? []).map((item) => ({
@@ -211,6 +214,7 @@ function orderFromTransfer(transfer: {
     tax: 0,
     total: subtotal,
     items,
+    itemCount: transfer.itemCount ?? (items.length > 0 ? items.length : undefined),
     source: "transfer",
     fromWarehouse: transfer.warehouseName,
   };
@@ -582,6 +586,19 @@ export const rejectOrder = (id: number, notes?: string) =>
 export const invoiceOrder = (id: number) => postAction(id, "invoice");
 export const dispatchOrder = (id: number) => postAction(id, "dispatch");
 export const cancelOrder = (id: number) => postAction(id, "cancel");
+
+/** Item count for list rows (API sends itemCount; detail sends items[]). */
+export function orderItemCount(order: {
+  itemCount?: number;
+  items?: Array<{ quantity?: number }>;
+}): number {
+  if (order.itemCount != null && order.itemCount > 0) return order.itemCount;
+  if (order.items && order.items.length > 0) {
+    const sum = order.items.reduce((a, i) => a + (Number(i.quantity) || 0), 0);
+    return sum > 0 ? sum : order.items.length;
+  }
+  return 0;
+}
 
 export function orderStatusTone(
   status: string

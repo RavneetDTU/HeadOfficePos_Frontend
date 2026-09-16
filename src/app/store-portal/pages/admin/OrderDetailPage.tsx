@@ -18,7 +18,6 @@ import {
   Button,
   Card,
   ErrorState,
-  PageHeader,
   Skeleton,
 } from "@/app/store-portal/components/ui/primitives";
 import { fmtZAR } from "@/app/store-portal/lib/utils";
@@ -97,10 +96,10 @@ export function OrderDetailPage() {
     }
   };
 
-  if (loading) return <Skeleton className="h-64" />;
+  if (loading) return <Skeleton className="h-64 m-4 sm:m-6" />;
   if (error || !order) {
     return (
-      <div>
+      <div className="p-4 sm:p-6">
         {apiMissing && (
           <BackendBanner>
             Needs <code className="text-xs">GET /orders/{"{id}"}</code> and lifecycle actions.
@@ -115,16 +114,18 @@ export function OrderDetailPage() {
   const canProcess = s === "PENDING" || s === "PROCESSING";
 
   return (
-    <div>
-      <PageHeader
-        title={order.reference}
-        subtitle={`${order.storeName || `Store #${order.storeId}`} · ${order.createdBy || ""}`}
-        actions={
-          <Link to="/branch-orders" className="text-sm text-teal-700 hover:underline">
-            Back to queue
-          </Link>
-        }
-      />
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{order.reference}</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            {order.storeName || `Store #${order.storeId}`} · {order.createdBy || ""}
+          </p>
+        </div>
+        <Link to="/branch-orders" className="text-sm text-teal-700 hover:underline shrink-0">
+          Back to queue
+        </Link>
+      </div>
 
       {apiMissing && (
         <BackendBanner>
@@ -133,7 +134,7 @@ export function OrderDetailPage() {
         </BackendBanner>
       )}
 
-      <div className="flex flex-wrap gap-2 mb-6 items-center">
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
         <Badge tone={orderStatusTone(order.status)}>{order.status}</Badge>
         {order.saleReference && (
           <span className="text-sm text-slate-500">Sale: {order.saleReference}</span>
@@ -141,7 +142,7 @@ export function OrderDetailPage() {
       </div>
 
       {order.timeline && order.timeline.length > 0 && (
-        <Card className="p-4 mb-6">
+        <Card className="p-4 mb-4">
           <h3 className="text-sm font-semibold mb-3">Timeline</h3>
           <ul className="space-y-2 text-sm text-slate-600">
             {order.timeline.map((ev, i) => (
@@ -158,7 +159,7 @@ export function OrderDetailPage() {
         </Card>
       )}
 
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-4">
         {canProcess && (
           <>
             <Button disabled={busy} onClick={() => run(() => approveOrder(order.id), "Approved")}>
@@ -212,60 +213,63 @@ export function OrderDetailPage() {
         )}
       </div>
 
-      <Card className="overflow-hidden mb-6">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Product</th>
-              <th className="px-4 py-3">SKU</th>
-              <th className="px-4 py-3">Qty</th>
-              <th className="px-4 py-3 text-right">Price</th>
-              <th className="px-4 py-3 text-right">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {order.items.map((item, idx) => {
-              const key = `${item.sku}-${idx}`;
-              return (
-                <tr key={key}>
-                  <td className="px-4 py-3">{item.productName}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
-                  <td className="px-4 py-3">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        min={0}
-                        className="w-20 rounded border px-2 py-1"
-                        value={editQty[key] ?? item.quantity}
-                        onChange={(e) =>
-                          setEditQty((q) => ({ ...q, [key]: Number(e.target.value) || 0 }))
-                        }
-                      />
-                    ) : (
-                      item.quantity
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">{fmtZAR(item.unitPrice)}</td>
-                  <td className="px-4 py-3 text-right">{fmtZAR(item.subtotal)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-
-      <Card className="p-4 max-w-sm ml-auto space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span>{fmtZAR(order.subtotal)}</span>
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Product</th>
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3 text-right">Qty</th>
+                <th className="px-4 py-3 text-right">Price</th>
+                <th className="px-4 py-3 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {order.items.map((item, idx) => {
+                const key = `${item.sku}-${idx}`;
+                return (
+                  <tr key={key}>
+                    <td className="px-4 py-3">{item.productName}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
+                    <td className="px-4 py-3 text-right">
+                      {editMode ? (
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-20 rounded border px-2 py-1 text-right ml-auto"
+                          value={editQty[key] ?? item.quantity}
+                          onChange={(e) =>
+                            setEditQty((q) => ({ ...q, [key]: Number(e.target.value) || 0 }))
+                          }
+                        />
+                      ) : (
+                        item.quantity
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">{fmtZAR(item.unitPrice)}</td>
+                    <td className="px-4 py-3 text-right">{fmtZAR(item.subtotal)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <div className="flex justify-between">
-          <span>Tax</span>
-          <span>{fmtZAR(order.tax)}</span>
-        </div>
-        <div className="flex justify-between font-semibold text-base border-t pt-2">
-          <span>Total</span>
-          <span>{fmtZAR(order.total)}</span>
+        <div className="border-t border-slate-100 px-4 py-4 flex justify-end">
+          <div className="w-full max-w-xs space-y-2 text-sm">
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">Subtotal</span>
+              <span className="tabular-nums">{fmtZAR(order.subtotal)}</span>
+            </div>
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">Tax</span>
+              <span className="tabular-nums">{fmtZAR(order.tax)}</span>
+            </div>
+            <div className="flex justify-between gap-8 font-semibold text-base border-t border-slate-100 pt-2">
+              <span>Total</span>
+              <span className="tabular-nums">{fmtZAR(order.total)}</span>
+            </div>
+          </div>
         </div>
       </Card>
     </div>
