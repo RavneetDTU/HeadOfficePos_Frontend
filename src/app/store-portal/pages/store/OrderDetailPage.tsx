@@ -5,6 +5,7 @@ import { fetchOrder, orderStatusTone, type StoreOrderSource } from "@/app/store-
 import type { BranchOrder } from "@/app/store-portal/types";
 import { useAuth } from "@/app/context/AuthContext";
 import { printOrderInvoice } from "@/app/lib/printSellInvoice";
+import { ProductImage } from "@/app/store-portal/components/products/ProductImage";
 import {
   Badge,
   Button,
@@ -150,13 +151,12 @@ export function OrderDetailPage() {
               <tr key={`${item.sku}-${idx}`}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    {item.imageUrl && (
-                      <img
-                        src={item.imageUrl}
-                        alt=""
-                        className="h-10 w-10 rounded-md border border-slate-100 object-contain"
-                      />
-                    )}
+                    <ProductImage
+                      src={item.imageUrl}
+                      alt={item.productName}
+                      className="h-10 w-10 shrink-0 rounded-md border border-slate-100"
+                      iconSize={16}
+                    />
                     <span>
                       {item.productName}
                       {item.isBackorder && (

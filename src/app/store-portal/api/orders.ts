@@ -1,4 +1,5 @@
 import { ApiError, apiFetch, buildQuery } from "@/app/lib/api";
+import { resolveMediaUrl } from "@/app/store-portal/lib/media";
 import { fetchTransfer, fetchTransfers, mapTransfer } from "@/app/store-portal/api/transfers";
 import type { BranchOrder, BranchOrderItem, BranchOrderStatus } from "@/app/store-portal/types";
 
@@ -21,7 +22,7 @@ function mapItem(raw: Record<string, unknown>): BranchOrderItem {
     subtotal: num(raw.subtotal, qty * unitPrice),
     tax: num(raw.tax),
     isBackorder: Boolean(raw.isBackorder ?? raw.is_backorder),
-    imageUrl: ((raw.imageUrl ?? raw.image_url) as string) ?? null,
+    imageUrl: resolveMediaUrl(raw.imageUrl, raw.image_url),
   };
 }
 

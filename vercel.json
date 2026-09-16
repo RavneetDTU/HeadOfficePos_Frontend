@@ -5,7 +5,19 @@
       "destination": "http://103.55.104.142:5022/:path*"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/media/:path*",
+      "destination": "http://103.55.104.142:5022/media/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "http://103.55.104.142:5022/uploads/:path*"
+    },
+    {
+      "source": "/static/:path*",
+      "destination": "http://103.55.104.142:5022/static/:path*"
+    },
+    {
+      "source": "/((?!api/|media/|uploads/|static/).*)",
       "destination": "/index.html"
     }
   ]
