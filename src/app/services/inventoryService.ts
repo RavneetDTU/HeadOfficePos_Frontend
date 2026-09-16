@@ -15,7 +15,7 @@ import type {
     ContactListResponse,
     ContactUpdate,
     CreateStockRequestPayload,
-    CreateTransferPayload,
+    CreateSellPayload,
     CustomerCreate,
     CustomerListParams,
     CustomerListResponse,
@@ -49,10 +49,10 @@ import type {
     SupplierListParams,
     SupplierListResponse,
     SupplierOut,
-    Transfer,
-    TransferItem,
-    TransferListParams,
-    TransferListResponse,
+    Sell,
+    SellItem,
+    SellListParams,
+    SellListResponse,
     UpdateStockRequestStatusPayload,
     Warehouse,
     WarehouseInventoryItem,
@@ -123,13 +123,13 @@ function mapStoreInvItem(raw: Record<string, unknown>): StoreInventoryItem {
 }
 
 /**
- * Map a raw API warehouse transfer list item to the legacy Transfer shape
- * so existing UI pages (ListTransfers) continue to work.
+ * Map a raw API warehouse sell list item to the legacy Sell shape
+ * so existing UI pages (ListSells) continue to work.
  */
-function mapTransferItem(raw: Record<string, unknown>): Transfer {
+function mapSellItem(raw: Record<string, unknown>): Sell {
   // Map items array if present (detail endpoint returns items)
   const rawItems = Array.isArray(raw.items) ? (raw.items as Record<string, unknown>[]) : [];
-  const mappedItems: TransferItem[] = rawItems.map((item) => ({
+  const mappedItems: SellItem[] = rawItems.map((item) => ({
     id: (item.id as number) ?? undefined,
     product_id: (item.productId as number) ?? (item.product_id as number) ?? 0,
     sku: (item.productSku as string) ?? (item.sku as string) ?? "",
@@ -146,15 +146,19 @@ function mapTransferItem(raw: Record<string, unknown>): Transfer {
 
   return {
     id: (raw.id as number) ?? 0,
-    transfer_reference:
+    sell_reference:
       (raw.transferNumber as string) ??
+      (raw.sellNumber as string) ??
       (raw.reference as string) ??
       (raw.transfer_reference as string) ??
-      `TRF-${raw.id}`,
-    transfer_date:
+      (raw.sell_reference as string) ??
+      `SELL-${raw.id}`,
+    sell_date:
       (raw.transferredAt as string) ??
+      (raw.soldAt as string) ??
       (raw.createdAt as string) ??
       (raw.transfer_date as string) ??
+      (raw.sell_date as string) ??
       new Date().toISOString(),
     from_warehouse_id:
       (raw.warehouseId as number) ?? (raw.from_warehouse_id as number) ?? 0,
@@ -166,14 +170,14 @@ function mapTransferItem(raw: Record<string, unknown>): Transfer {
       (raw.storeName as string) ?? (raw.to_store_name as string) ?? "",
     notes: (raw.remarks as string) ?? (raw.notes as string) ?? undefined,
     status: (() => {
-      const dbStatus = ((raw.status as string) ?? "Completed") as Transfer["status"];
+      const dbStatus = ((raw.status as string) ?? "Completed") as Sell["status"];
       try {
-        const overrides = localStorage.getItem("hal_pos_transfer_statuses");
+        const overrides = (localStorage.getItem("hal_pos_sell_statuses") ?? localStorage.getItem("hal_pos_transfer_statuses"));
         if (overrides) {
           const map = JSON.parse(overrides);
           const tId = (raw.id as number) ?? 0;
           if (map[tId]) {
-            return map[tId] as Transfer["status"];
+            return map[tId] as Sell["status"];
           }
         }
       } catch { }
@@ -314,7 +318,21 @@ function mapProductResponse(raw: Record<string, unknown>): Product {
     selling_price: Number(raw.sellingPrice ?? raw.selling_price ?? 0),
     tax_rate: Number(raw.taxPercent ?? raw.tax_rate ?? raw.tax_percent ?? 0),
     description: (raw.description as string) ?? undefined,
-    image_url: ((raw.imageUrl ?? raw.image_url) as string) ?? undefined,
+    image_url: (() => {
+      const images = Array.isArray(raw.images) ? (raw.images as Record<string, unknown>[]) : [];
+      const first = images[0];
+      const url = String(
+        raw.imageUrl ??
+          raw.image_url ??
+          first?.url ??
+          first?.thumbnailUrl ??
+          raw.thumbnailUrl ??
+          raw.thumbnail_url ??
+          ""
+      ).trim();
+      if (!url || url.startsWith("local:")) return undefined;
+      return url;
+    })(),
     alert_qty: Number(raw.alertQty ?? raw.alert_qty ?? 0),
     total_stock:
       raw.totalStock != null || raw.total_stock != null
@@ -389,12 +407,14 @@ function normalizeProductCreate(data: Record<string, unknown>): ProductCreatePay
     name: String(data.name ?? "").trim(),
     category: (data.category as string) || undefined,
     brand: (data.brand as string) || undefined,
+    model: (data.model as string) || undefined,
     unit: (data.unit as string) || undefined,
     costPrice: Number(data.costPrice ?? data.cost_price ?? 0),
     sellingPrice: Number(data.sellingPrice ?? data.selling_price ?? 0),
     taxPercent: Number(data.taxPercent ?? data.tax_rate ?? data.tax_percent ?? 0),
     description: (data.description as string) || undefined,
     imageUrl: imageUrl || undefined,
+    thumbnailUrl: ((data.thumbnailUrl ?? data.thumbnail_url) as string) || undefined,
     status: (data.status as string) || "Active",
     alertQty:
       data.alertQty != null
@@ -404,6 +424,22 @@ function normalizeProductCreate(data: Record<string, unknown>): ProductCreatePay
           : undefined,
     openingStock: openingStock?.length ? openingStock : undefined,
   };
+}
+
+/** POST /products/upload — store image on the server, return permanent URLs. */
+export async function uploadProductImage(
+  file: File
+): Promise<{ imageUrl: string; thumbnailUrl: string }> {
+  const body = new FormData();
+  body.append("file", file);
+  const raw = await apiFetch<Record<string, unknown>>("/products/upload", {
+    method: "POST",
+    body,
+  });
+  const imageUrl = String(raw.imageUrl ?? raw.image_url ?? "");
+  const thumbnailUrl = String(raw.thumbnailUrl ?? raw.thumbnail_url ?? imageUrl);
+  if (!imageUrl) throw new Error("Upload succeeded but no imageUrl was returned.");
+  return { imageUrl, thumbnailUrl };
 }
 
 /** POST /products — Create a product */
@@ -467,13 +503,15 @@ function peopleListQuery(params: {
   });
 }
 
-function mapContactList(raw: ContactListResponse) {
+function mapContactList(raw: ContactListResponse | Record<string, unknown>) {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  const items = (obj.items ?? obj.suppliers ?? obj.data ?? []) as ContactListResponse["items"];
   return {
-    items: raw.items ?? [],
-    total: raw.total ?? 0,
-    total_pages: raw.pages ?? 1,
-    current_page: raw.page ?? 1,
-    limit: raw.limit ?? 20,
+    items,
+    total: Number(obj.total ?? items.length),
+    total_pages: Number(obj.pages ?? obj.totalPages ?? obj.total_pages ?? 1),
+    current_page: Number(obj.page ?? obj.currentPage ?? obj.current_page ?? 1),
+    limit: Number(obj.limit ?? 20),
   };
 }
 
@@ -688,15 +726,15 @@ export async function addWarehouseStock(
   });
 }
 
-// ─── Warehouse Transfers ───────────────────────────────────────────────────────
+// ─── Warehouse Sells ───────────────────────────────────────────────────────
 
 /**
- * GET /warehouse/transfers — List all warehouse-to-store transfers.
- * Returns data in legacy TransferListResponse shape for existing UI pages.
+ * GET /warehouse/transfers — List all warehouse-to-store sells.
+ * Returns data in legacy SellListResponse shape for existing UI pages.
  */
-export async function getTransfers(
-  params: TransferListParams = {}
-): Promise<TransferListResponse> {
+export async function getSells(
+  params: SellListParams = {}
+): Promise<SellListResponse> {
   const query = buildQuery({
     page: params.page,
     limit: params.limit,
@@ -710,10 +748,10 @@ export async function getTransfers(
 
   const raw = await apiFetch<Record<string, unknown>>(`/warehouse/transfers${query}`);
 
-  const rawTransfers = (raw.transfers as Record<string, unknown>[]) ?? [];
+  const rawSells = ((raw.sells ?? raw.transfers) as Record<string, unknown>[]) ?? [];
 
   return {
-    transfers: rawTransfers.map(mapTransferItem),
+    sells: rawSells.map(mapSellItem),
     total: (raw.total as number) ?? 0,
     total_pages: (raw.totalPages as number) ?? (raw.total_pages as number) ?? 1,
     current_page: (raw.currentPage as number) ?? (raw.current_page as number) ?? 1,
@@ -721,36 +759,36 @@ export async function getTransfers(
 }
 
 /**
- * GET /warehouse/transfers/{transferId} — Get transfer details.
+ * GET /warehouse/transfers/{sellId} — Get sell details.
  */
-export async function getTransfer(id: number): Promise<Transfer> {
+export async function getSell(id: number): Promise<Sell> {
   const raw = await apiFetch<Record<string, unknown>>(
     `/warehouse/transfers/${id}`
   );
-  return mapTransferItem(raw);
+  return mapSellItem(raw);
 }
 
 /**
- * PATCH /warehouse/transfers/{transferId} — Update transfer status in the backend.
+ * PATCH /warehouse/transfers/{sellId} — Update sell status in the backend.
  */
-export async function updateTransferStatus(
+export async function updateSellStatus(
   id: number,
   status: string
-): Promise<Transfer> {
+): Promise<Sell> {
   const raw = await apiFetch<Record<string, unknown>>(`/warehouse/transfers/${id}`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
-  return mapTransferItem(raw);
+  return mapSellItem(raw);
 }
 
 /**
- * POST /warehouse/transfers — Create a warehouse→store transfer.
- * Accepts the legacy CreateTransferPayload shape and maps to the real API body.
+ * POST /warehouse/transfers — Create a warehouse→store sell.
+ * Accepts the legacy CreateSellPayload shape and maps to the real API body.
  */
-export async function createTransfer(
-  payload: CreateTransferPayload
-): Promise<Transfer> {
+export async function createSell(
+  payload: CreateSellPayload
+): Promise<Sell> {
   const body = {
     warehouseId: payload.from_warehouse_id,
     storeId: payload.to_store_id,
@@ -767,9 +805,9 @@ export async function createTransfer(
     body: JSON.stringify(body),
   });
 
-  // Save transfer items in localStorage for high-performance stock adjustments
+  // Save sell items in localStorage for high-performance stock adjustments
   try {
-    const saved = localStorage.getItem("hal_pos_transfer_items_cache");
+    const saved = (localStorage.getItem("hal_pos_sell_items_cache") ?? localStorage.getItem("hal_pos_transfer_items_cache"));
     const cache = saved ? JSON.parse(saved) : {};
     // Use items from API response if available, otherwise fall back to payload items
     const rawItems = Array.isArray(raw.items) ? (raw.items as any[]) : [];
@@ -785,10 +823,10 @@ export async function createTransfer(
         purchasePrice: item.purchase_price ?? 0,
       }));
     cache[raw.id as number] = items;
-    localStorage.setItem("hal_pos_transfer_items_cache", JSON.stringify(cache));
+    localStorage.setItem("hal_pos_sell_items_cache", JSON.stringify(cache));
   } catch { }
 
-  return mapTransferItem(raw);
+  return mapSellItem(raw);
 }
 
 // ─── Store Inventory ───────────────────────────────────────────────────────────
@@ -855,17 +893,17 @@ export async function getStoreInventoryHistory(params: {
 }
 
 /**
- * GET /store/purchases — All transfers received by the logged-in store.
+ * GET /store/purchases — All sells received by the logged-in store.
  * Mapped to legacy StorePurchaseHistoryResponse shape.
  */
 export async function getMyStorePurchaseHistory(
   _params: Record<string, string | number | undefined> = {}
 ): Promise<StorePurchaseHistoryResponse> {
   const raw = await apiFetch<Record<string, unknown>[]>("/store/purchases");
-  const transfers = (raw ?? []).map((r) => ({
-    transfer_reference:
-      (r.reference as string) ?? (r.transfer_reference as string) ?? "",
-    transfer_date:
+  const sells = (raw ?? []).map((r) => ({
+    sell_reference:
+      (r.reference as string) ?? (r.sell_reference as string) ?? "",
+    sell_date:
       (r.transferredAt as string) ??
       (r.createdAt as string) ??
       new Date().toISOString(),
@@ -881,8 +919,8 @@ export async function getMyStorePurchaseHistory(
     status: (r.status as string) ?? "Completed",
   }));
   return {
-    transfers,
-    total: transfers.length,
+    sells,
+    total: sells.length,
     total_pages: 1,
     current_page: 1,
   };
@@ -929,7 +967,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardSummary> {
   const ws = (raw.warehouseSummary ?? raw.warehouse_summary ?? {}) as Record<string, unknown>;
   const ss = (raw.storeSummary ?? raw.store_summary ?? {}) as Record<string, unknown>;
   const salesSum = (raw.salesSummary ?? raw.sales_summary ?? {}) as Record<string, unknown>;
-  const recentTransfers = (raw.recentTransfers ?? raw.recent_transfers ?? []) as Record<string, unknown>[];
+  const recentSells = (raw.recentSells ?? raw.recent_sells ?? raw.recentTransfers ?? raw.recent_transfers ?? []) as Record<string, unknown>[];
   const recentSales = (raw.recentSales ?? raw.recent_sales ?? []) as Record<string, unknown>[];
 
   // Map flat properties from WarehouseDashboardOut directly if present
@@ -1009,9 +1047,9 @@ export async function getAdminDashboard(): Promise<AdminDashboardSummary> {
         (salesSum.total_sales_count_month as number) ??
         0,
     },
-    recent_transfers: recentTransfers.map((t) => ({
-      transfer_reference:
-        (t.reference as string) ?? (t.transfer_reference as string) ?? "",
+    recent_sells: recentSells.map((t) => ({
+      sell_reference:
+        (t.reference as string) ?? (t.sell_reference as string) ?? "",
       to_store_name:
         (t.storeName as string) ?? (t.to_store_name as string) ?? "",
       total_value: (t.totalValue as number) ?? (t.total_value as number) ?? 0,
@@ -1113,8 +1151,8 @@ export async function getStoreDashboard(): Promise<StoreDashboardSummary> {
         0,
     },
     recent_purchases_from_warehouse: recentPurchases.map((p) => ({
-      transfer_reference:
-        (p.reference as string) ?? (p.transfer_reference as string) ?? "",
+      sell_reference:
+        (p.reference as string) ?? (p.sell_reference as string) ?? "",
       date:
         (p.createdAt as string) ??
         (p.date as string) ??
@@ -1239,33 +1277,33 @@ export async function deleteWarehouse(id: number): Promise<void> {
   return apiFetch<void>(`/warehouses/${id}`, { method: "DELETE" });
 }
 
-/** @deprecated Not in real API; transfer history is from /warehouse/transfers */
-export async function getStoreTransferHistory(
+/** @deprecated Not in real API; sell history is from /warehouse/transfers */
+export async function getStoreSellHistory(
   _storeId: number,
   params: Record<string, string | number | undefined> = {}
-): Promise<TransferListResponse> {
-  return getTransfers(params);
+): Promise<SellListResponse> {
+  return getSells(params);
 }
 
 /**
- * Retrieve transfer items using localStorage cache to avoid duplicate details API hits.
- * Fallback to fetching the transfer details if the item list is not cached.
+ * Retrieve sell items using localStorage cache to avoid duplicate details API hits.
+ * Fallback to fetching the sell details if the item list is not cached.
  */
-export async function getTransferItemsWithCache(
-  transferId: number
+export async function getSellItemsWithCache(
+  sellId: number
 ): Promise<{ productSku: string; quantity: number; purchasePrice: number }[]> {
   try {
-    const saved = localStorage.getItem("hal_pos_transfer_items_cache");
+    const saved = (localStorage.getItem("hal_pos_sell_items_cache") ?? localStorage.getItem("hal_pos_transfer_items_cache"));
     const cache = saved ? JSON.parse(saved) : {};
-    const cached = cache[transferId];
+    const cached = cache[sellId];
     // Only use cache if it's a non-empty array with purchasePrice (new format)
     if (Array.isArray(cached) && cached.length > 0 && cached[0].purchasePrice !== undefined) {
       return cached as { productSku: string; quantity: number; purchasePrice: number }[];
     }
 
-    // Fetch raw detail directly to get items (mapTransferItem now preserves items)
+    // Fetch raw detail directly to get items (mapSellItem now preserves items)
     const raw = await apiFetch<Record<string, unknown>>(
-      `/warehouse/transfers/${transferId}`
+      `/warehouse/transfers/${sellId}`
     );
     const rawItems = Array.isArray(raw.items) ? (raw.items as Record<string, unknown>[]) : [];
     const items = rawItems.map(item => ({
@@ -1273,8 +1311,8 @@ export async function getTransferItemsWithCache(
       quantity: (item.quantity as number) ?? 0,
       purchasePrice: (item.purchasePrice as number) ?? (item.purchase_price as number) ?? 0,
     }));
-    cache[transferId] = items;
-    localStorage.setItem("hal_pos_transfer_items_cache", JSON.stringify(cache));
+    cache[sellId] = items;
+    localStorage.setItem("hal_pos_sell_items_cache", JSON.stringify(cache));
     return items;
   } catch {
     return [];
@@ -1312,9 +1350,13 @@ function mapStockRequest(raw: Record<string, unknown>): StockRequest {
     store_name: (raw.storeName as string) ?? (raw.store_name as string) ?? undefined,
     requested_by_id: (raw.requestedById as number) ?? (raw.requested_by_id as number) ?? 0,
     requested_by: getFirstName((raw.requestedBy as string) ?? (raw.requestedByUsername as string) ?? (raw.requested_by as string) ?? undefined),
-    status: (raw.status as StockRequest["status"]) ?? "Pending",
+    status: (() => {
+      const s = (raw.status as string) ?? "Pending";
+      // Backend still emits "Transfer Created" until the sell rename ships
+      return (s === "Transfer Created" ? "Sell Created" : s) as StockRequest["status"];
+    })(),
     remarks: (raw.remarks as string | null) ?? null,
-    transfer_id: (raw.transferId as number | null) ?? (raw.transfer_id as number | null) ?? null,
+    sell_id: (raw.sellId as number | null) ?? (raw.sell_id as number | null) ?? (raw.transferId as number | null) ?? (raw.transfer_id as number | null) ?? null,
     items: rawItems.map(mapStockRequestItem),
     created_at: (raw.createdAt as string) ?? (raw.created_at as string) ?? new Date().toISOString(),
     updated_at: (raw.updatedAt as string) ?? (raw.updated_at as string) ?? new Date().toISOString(),
@@ -1391,7 +1433,7 @@ export async function createStockRequest(
 export async function updateStockRequestStatus(
   id: number,
   payload: UpdateStockRequestStatusPayload
-): Promise<{ id: number; status: string; transfer_id: number | null; message: string }> {
+): Promise<{ id: number; status: string; sell_id: number | null; message: string }> {
   const raw = await apiFetch<Record<string, unknown>>(`/stock-requests/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify(payload),
@@ -1399,7 +1441,7 @@ export async function updateStockRequestStatus(
   return {
     id: (raw.id as number) ?? id,
     status: (raw.status as string) ?? payload.status,
-    transfer_id: (raw.transferId as number | null) ?? null,
+    sell_id: (raw.sellId as number | null) ?? (raw.transferId as number | null) ?? null,
     message: (raw.message as string) ?? `Status updated to ${payload.status}.`,
   };
 }

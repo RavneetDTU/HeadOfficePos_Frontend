@@ -5,8 +5,8 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { getWarehouses, getMasterData } from "../services/inventoryService";
-import type { Warehouse } from "../types/inventory";
+import { getWarehouses, getMasterData, getSuppliers } from "../services/inventoryService";
+import type { SupplierOut, Warehouse } from "../types/inventory";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -37,7 +37,9 @@ export function AddPurchase() {
   // ── Header fields ──
   const [date, setDate] = useState(new Date().toISOString().slice(0, 16));
   const [supplier, setSupplier] = useState("");
+  const [supplierId, setSupplierId] = useState<number | null>(null);
   const [supplierPhone, setSupplierPhone] = useState("");
+  const [suppliers, setSuppliers] = useState<SupplierOut[]>([]);
   const [warehousesList, setWarehousesList] = useState<Warehouse[]>([]);
   const [warehouse, setWarehouse] = useState("");
   const [purchaseStatus, setPurchaseStatus] = useState("Received");
@@ -68,14 +70,20 @@ export function AddPurchase() {
     const load = async () => {
       setIsLoadingProducts(true);
       try {
-        const whs = await getWarehouses();
+        const [whs, data, supplierRes] = await Promise.all([
+          getWarehouses(),
+          getMasterData(),
+          getSuppliers({ page: 1, limit: 100, status: "Active" }).catch(() => ({
+            suppliers: [] as SupplierOut[],
+          })),
+        ]);
         setWarehousesList(whs);
         const defaultWh = whs.some((w) => w.name === user?.warehouse)
           ? user?.warehouse
           : (whs.length > 0 ? whs[0].name : "");
         setWarehouse(defaultWh || "");
+        setSuppliers(supplierRes.suppliers ?? []);
 
-        const data = await getMasterData();
         const catalog: ProductEntry[] = data.products.map((p) => ({
           sku: p.sku,
           name: p.name,
@@ -152,10 +160,15 @@ export function AddPurchase() {
     if (orderItems.length === 0) { setSubmitError("Please add at least one product."); return; }
 
     const selectedWh = warehousesList.find((w) => w.name === warehouse);
+    const selectedSupplier = suppliers.find((s) => s.id === supplierId);
     const payload = {
       date: new Date(date).toISOString(),
       supplier: supplier.trim(),
       supplierPhone: supplierPhone.trim() || null,
+      supplierId: supplierId ?? null,
+      supplierName: selectedSupplier?.name ?? supplier.trim(),
+      supplierCompany: selectedSupplier?.company ?? null,
+      supplierEmail: selectedSupplier?.email ?? null,
       warehouseId: selectedWh ? selectedWh.id : null,
       warehouse: selectedWh ? selectedWh.name : null,
       purchaseStatus,
@@ -188,6 +201,7 @@ export function AddPurchase() {
   const handleReset = () => {
     setOrderItems([]);
     setSupplier("");
+    setSupplierId(null);
     setSupplierPhone("");
     setNotes("");
     setSubmitError("");
@@ -272,13 +286,40 @@ export function AddPurchase() {
           <div className="grid grid-cols-3 gap-4 mb-5">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Supplier *</label>
-              <input
-                type="text"
-                value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-                placeholder="e.g. Hearing Aid Labs - HEAD OFFICE"
-                className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+              {suppliers.length > 0 ? (
+                <select
+                  value={supplierId ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : null;
+                    setSupplierId(id);
+                    const selected = suppliers.find((s) => s.id === id);
+                    const label = selected
+                      ? (selected.company || selected.name || `Supplier #${selected.id}`)
+                      : "";
+                    setSupplier(label);
+                    setSupplierPhone(selected?.phone ?? "");
+                  }}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Select supplier</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.company || s.name || `Supplier #${s.id}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={supplier}
+                  onChange={(e) => {
+                    setSupplier(e.target.value);
+                    setSupplierId(null);
+                  }}
+                  placeholder="e.g. Hearing Aid Labs - HEAD OFFICE"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Supplier Phone</label>

@@ -3,6 +3,7 @@ import {
     BarChart3,
     Building2,
     ChevronDown,
+    ClipboardList,
     Contact2,
     FileCheck,
     FileText,
@@ -34,14 +35,15 @@ const navItems: NavItem[] = [
     children: [
       { label: "List Product", icon: <ListOrdered size={18} />, path: "/products" },
       { label: "Add Product", icon: <PlusCircle size={18} />, path: "/products/add" },
+      { label: "Product Catalog", icon: <Package size={18} />, path: "/catalog" },
     ],
   },
   {
     label: "Sales",
     icon: <ArrowLeftRight size={20} />,
     children: [
-      { label: "List Sales", icon: <ListOrdered size={18} />, path: "/transfers" },
-      { label: "Add Sales", icon: <PlusCircle size={18} />, path: "/transfers/add" },
+      { label: "List Sales", icon: <ListOrdered size={18} />, path: "/sells" },
+      { label: "Add Sales", icon: <PlusCircle size={18} />, path: "/sells/add" },
     ],
   },
   {
@@ -64,7 +66,15 @@ const navItems: NavItem[] = [
     label: "Purchases",
     icon: <SendToBack size={20} />,
     children: [
-      { label: "All Purchases", icon: <ListOrdered size={18} />, path: "/requests" },
+      { label: "List Purchases", icon: <ListOrdered size={18} />, path: "/purchases" },
+      { label: "Add Purchase", icon: <PlusCircle size={18} />, path: "/purchases/add" },
+    ],
+  },
+  {
+    label: "Branch Orders",
+    icon: <ClipboardList size={20} />,
+    children: [
+      { label: "Order Queue", icon: <ListOrdered size={18} />, path: "/branch-orders" },
     ],
   },
   {

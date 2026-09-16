@@ -17,8 +17,8 @@ import {
   getAdminDashboard,
   getStoreInventory,
   getStores,
-  getTransferItemsWithCache,
-  getTransfers,
+  getSellItemsWithCache,
+  getSells,
   getWarehouses,
 } from "../services/inventoryService";
 import type { AdminDashboardSummary, Warehouse } from "../types/inventory";
@@ -184,13 +184,13 @@ export function OfficePOSDashboard() {
     setWarehouseCard(null);
 
     try {
-      // Step 1: Fetch locations and transfers in parallel
-      const [stores, warehouses, transfersResp] = await Promise.all([
+      // Step 1: Fetch locations and sells in parallel
+      const [stores, warehouses, sellsResp] = await Promise.all([
         getStores(),
         getWarehouses(),
-        getTransfers({ limit: 100 })
+        getSells({ limit: 100 })
       ]);
-      const transfers = transfersResp.transfers ?? [];
+      const sells = sellsResp.sells ?? [];
 
       // ── WAREHOUSE CARD (uses GET /dashboard/warehouse) ──────────────────────
       const headOffice = warehouses.find((w) => w.name === "HEAD OFFICE") ?? warehouses[0] ?? null;
@@ -208,12 +208,12 @@ export function OfficePOSDashboard() {
             const ws = dash.warehouse_summary;
             const sal = dash.sales_summary;
 
-            // Adjust warehouse stock values based on Cancelled / Rejected transfers
-            const cancelledTrans = transfers.filter(t => t.status === "Cancelled" || t.status === "Rejected");
+            // Adjust warehouse stock values based on Cancelled / Rejected sells
+            const cancelledSells = sells.filter(t => t.status === "Cancelled" || t.status === "Rejected");
             let restoredUnits = 0;
             const restoredSkus = new Set<string>();
-            for (const t of cancelledTrans) {
-              const items = await getTransferItemsWithCache(t.id);
+            for (const t of cancelledSells) {
+              const items = await getSellItemsWithCache(t.id);
               for (const item of items) {
                 restoredUnits += item.quantity;
                 if (item.quantity > 0) {
@@ -291,16 +291,16 @@ export function OfficePOSDashboard() {
             const invResp = await getStoreInventory(store.id);
             const items = invResp.items ?? [];
 
-            // Filter transfers destination to this store
-            const storeTransfers = transfers.filter(t => t.to_store_id === store.id);
+            // Filter sells destination to this store
+            const storeSells = sells.filter(t => t.to_store_id === store.id);
 
-            // Collect undelivered & cancelled units to subtract (since backend added them immediately on transfer)
+            // Collect undelivered & cancelled units to subtract (since backend added them immediately on sell)
             let subtractQtyMap: Record<string, number> = {};
-            for (const t of storeTransfers) {
+            for (const t of storeSells) {
               const isUndelivered = t.status === "Pending" || t.status === "Approved" || t.status === "In Transit";
               const isCancelled = t.status === "Cancelled" || t.status === "Rejected";
               if (isUndelivered || isCancelled) {
-                const tItems = await getTransferItemsWithCache(t.id);
+                const tItems = await getSellItemsWithCache(t.id);
                 for (const item of tItems) {
                   const sku = item.productSku.toLowerCase().trim();
                   subtractQtyMap[sku] = (subtractQtyMap[sku] || 0) + item.quantity;
@@ -433,7 +433,7 @@ export function OfficePOSDashboard() {
         {[
           { label: "Products", icon: <Package size={13} />, path: "/products" },
 
-          { label: "Transfers", icon: <ArrowRightLeft size={13} />, path: "/transfers" },
+          { label: "Sells", icon: <ArrowRightLeft size={13} />, path: "/sells" },
 
         ].map((item) => (
           <button

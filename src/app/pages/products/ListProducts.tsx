@@ -17,11 +17,7 @@ import { Link } from "react-router";
 import { SearchAutosuggest } from "../../components/ui/SearchAutosuggest";
 import { ProductLabelModal } from "../../components/products/ProductLabelModal";
 import { useAuth } from "../../context/AuthContext";
-import {
-  getProductImageObjectUrl,
-  isLocalProductImageRef,
-  parseLocalProductImageRef,
-} from "../../lib/productImages";
+import { resolveMediaUrl } from "../../store-portal/lib/media";
 import {
   getProducts,
   getSalesStock,
@@ -89,7 +85,6 @@ export function ListProducts() {
 
   const [viewProduct, setViewProduct] = useState<(ProductEntry & { quantity: number; statusLabel: string }) | null>(null);
   const [labelProduct, setLabelProduct] = useState<ProductEntry | null>(null);
-  const [localImageUrls, setLocalImageUrls] = useState<Record<string, string>>({});
 
   // Load Data from backend APIs
   const loadData = async () => {
@@ -225,43 +220,8 @@ export function ListProducts() {
     loadData();
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const objectUrls: string[] = [];
-
-    const loadLocalImages = async () => {
-      const entries: Record<string, string> = {};
-      for (const product of products) {
-        if (!isLocalProductImageRef(product.imageUrl)) continue;
-        const sku =
-          parseLocalProductImageRef(product.imageUrl) ?? product.sku;
-        const url = await getProductImageObjectUrl(sku);
-        if (url) {
-          objectUrls.push(url);
-          entries[product.sku] = url;
-        }
-      }
-      if (!cancelled) setLocalImageUrls(entries);
-    };
-
-    if (products.length > 0) {
-      void loadLocalImages();
-    } else {
-      setLocalImageUrls({});
-    }
-
-    return () => {
-      cancelled = true;
-      objectUrls.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [products]);
-
-  const resolveProductImageSrc = (product: ProductEntry): string | undefined => {
-    if (isLocalProductImageRef(product.imageUrl)) {
-      return localImageUrls[product.sku];
-    }
-    return product.imageUrl;
-  };
+  const resolveProductImageSrc = (product: ProductEntry): string | undefined =>
+    resolveMediaUrl(product.imageUrl) ?? undefined;
 
   // Compute quantity based on selected location
   const getProductQty = (sku: string): number => {

@@ -176,22 +176,22 @@ function AdminDashboard() {
 
       {/* Recent Activity */}
       <div className="grid grid-cols-2 gap-5">
-        {/* Recent Transfers */}
+        {/* Recent Sells */}
         <div className="bg-white border border-gray-200 rounded-xl">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <Truck size={16} className="text-blue-600" />
-              <h2 className="text-sm font-semibold text-gray-900">Recent Transfers</h2>
+              <h2 className="text-sm font-semibold text-gray-900">Recent Sells</h2>
             </div>
-            <Link to="/transfers" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+            <Link to="/sells" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
               View all <ArrowRight size={12} />
             </Link>
           </div>
           <div className="divide-y divide-gray-50">
-            {data.recent_transfers.map((t) => (
-              <div key={t.transfer_reference} className="px-5 py-3 flex items-center justify-between">
+            {data.recent_sells.map((t) => (
+              <div key={t.sell_reference} className="px-5 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-mono text-blue-700">{t.transfer_reference}</p>
+                  <p className="text-xs font-mono text-blue-700">{t.sell_reference}</p>
                   <p className="text-sm text-gray-900 mt-0.5">→ {t.to_store_name}</p>
                   <p className="text-xs text-gray-400">{fmtDate(t.date)}</p>
                 </div>
@@ -200,8 +200,8 @@ function AdminDashboard() {
             ))}
           </div>
           <div className="px-5 py-3 border-t border-gray-100">
-            <Link to="/transfers/add" className="flex items-center justify-center gap-2 text-sm text-white bg-blue-600 hover:bg-blue-700 transition-colors rounded-lg py-2 font-medium">
-              <Truck size={15} /> New Transfer
+            <Link to="/sells/add" className="flex items-center justify-center gap-2 text-sm text-white bg-blue-600 hover:bg-blue-700 transition-colors rounded-lg py-2 font-medium">
+              <Truck size={15} /> New Sell
             </Link>
           </div>
         </div>
@@ -243,8 +243,8 @@ function AdminDashboard() {
         <div className="grid grid-cols-4 gap-3">
           {[
             { label: "Warehouse Inventory", path: "/warehouse/inventory", icon: <Building2 size={20} />, color: "text-blue-600", bg: "bg-blue-50 hover:bg-blue-100" },
-            { label: "New Transfer", path: "/transfers/add", icon: <Truck size={20} />, color: "text-purple-600", bg: "bg-purple-50 hover:bg-purple-100" },
-            { label: "All Transfers", path: "/transfers", icon: <ArrowUpRight size={20} />, color: "text-indigo-600", bg: "bg-indigo-50 hover:bg-indigo-100" },
+            { label: "New Sell", path: "/sells/add", icon: <Truck size={20} />, color: "text-purple-600", bg: "bg-purple-50 hover:bg-purple-100" },
+            { label: "All Sells", path: "/sells", icon: <ArrowUpRight size={20} />, color: "text-indigo-600", bg: "bg-indigo-50 hover:bg-indigo-100" },
             { label: "Products", path: "/products", icon: <Package size={20} />, color: "text-orange-600", bg: "bg-orange-50 hover:bg-orange-100" },
           ].map((a) => (
             <Link key={a.path} to={a.path} className={`${a.bg} rounded-xl p-4 flex flex-col items-center gap-2 transition-colors`}>
@@ -367,7 +367,7 @@ function StoreDashboard() {
             {data.recent_purchases_from_warehouse.map((t, i) => (
               <div key={i} className="px-5 py-3 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-mono text-blue-700">{t.transfer_reference}</p>
+                  <p className="text-xs font-mono text-blue-700">{t.sell_reference}</p>
                   <p className="text-sm text-gray-900 mt-0.5">{t.product_name}</p>
                   <p className="text-xs text-gray-400">{timeAgo(t.date)}</p>
                 </div>

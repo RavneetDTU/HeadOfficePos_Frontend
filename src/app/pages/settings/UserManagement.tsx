@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Loader2,
   Crown,
+  Store,
   User as UserIcon,
   Mail,
   Calendar,
@@ -17,41 +18,46 @@ import {
   X,
 } from "lucide-react";
 import { useAuth, type User, type Role } from "../../context/AuthContext";
-
-// ─── Warehouses (mirrors LoginPage) ──────────────────────────────────────────
-const WAREHOUSES = [
-  "HEAD OFFICE",
-  "BRANCH 1",
-  "BRANCH 2",
-  "BRANCH 3",
-  "BRANCH 4",
-];
+import { getStores } from "../../services/inventoryService";
+import type { Warehouse } from "../../types/inventory";
 
 // ─── Role-change modal ────────────────────────────────────────────────────────
 interface EditModalProps {
   target: User;
+  stores: Warehouse[];
   onClose: () => void;
-  onSave: (role: Role, warehouse: string | null) => Promise<void>;
+  onSave: (role: Role, warehouse: string | null, storeId: number | null) => Promise<void>;
   isSaving: boolean;
 }
 
-function EditRoleModal({ target, onClose, onSave, isSaving }: EditModalProps) {
-  const [role, setRole] = useState<Role>(target.role);
-  const [warehouse, setWarehouse] = useState<string>(
-    target.warehouse ?? WAREHOUSES[0]
+function EditRoleModal({ target, stores, onClose, onSave, isSaving }: EditModalProps) {
+  const [role, setRole] = useState<Role>(
+    target.role === "store_manager" || target.role === "admin" ? target.role : "user"
+  );
+  const [storeId, setStoreId] = useState<string>(
+    target.storeId != null ? String(target.storeId) : stores[0] ? String(stores[0].id) : ""
   );
 
+  const selectedStore = stores.find((s) => String(s.id) === storeId) ?? stores[0];
   const isAdmin = role === "admin";
+  const isStoreManager = role === "store_manager";
 
   const handleSave = () => {
-    onSave(role, isAdmin ? null : warehouse);
+    if (isAdmin) {
+      onSave("admin", null, null);
+      return;
+    }
+    if (isStoreManager) {
+      if (!selectedStore) return;
+      onSave("store_manager", selectedStore.name, selectedStore.id);
+      return;
+    }
+    onSave("user", selectedStore?.name ?? target.warehouse, selectedStore?.id ?? null);
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-
-        {/* Header */}
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Edit User Role</h2>
@@ -68,48 +74,58 @@ function EditRoleModal({ target, onClose, onSave, isSaving }: EditModalProps) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-6 space-y-5">
-
-          {/* Role selector */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-2">Role</label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => setRole("admin")}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
                   role === "admin"
                     ? "border-blue-500 bg-blue-50 text-blue-700"
                     : "border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50"
                 }`}
               >
-                <Crown size={22} className={role === "admin" ? "text-blue-600" : "text-gray-400"} />
+                <Crown size={20} className={role === "admin" ? "text-blue-600" : "text-gray-400"} />
                 <span className="text-sm font-semibold">Admin</span>
-                <span className="text-xs text-center leading-tight opacity-70">Full system access · No warehouse</span>
+                <span className="text-[10px] text-center leading-tight opacity-70">Head Office</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRole("store_manager")}
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                  role === "store_manager"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <Store size={20} className={role === "store_manager" ? "text-blue-600" : "text-gray-400"} />
+                <span className="text-sm font-semibold">Store Manager</span>
+                <span className="text-[10px] text-center leading-tight opacity-70">Place orders</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setRole("user")}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
                   role === "user"
                     ? "border-blue-500 bg-blue-50 text-blue-700"
                     : "border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50"
                 }`}
               >
-                <UserIcon size={22} className={role === "user" ? "text-blue-600" : "text-gray-400"} />
+                <UserIcon size={20} className={role === "user" ? "text-blue-600" : "text-gray-400"} />
                 <span className="text-sm font-semibold">User</span>
-                <span className="text-xs text-center leading-tight opacity-70">Branch access · Requires warehouse</span>
+                <span className="text-[10px] text-center leading-tight opacity-70">Limited</span>
               </button>
             </div>
           </div>
 
-          {/* Warehouse selector (only for users) */}
           {!isAdmin && (
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Warehouse <span className="text-red-500">*</span>
+                Store <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Building2
@@ -117,12 +133,14 @@ function EditRoleModal({ target, onClose, onSave, isSaving }: EditModalProps) {
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
                 />
                 <select
-                  value={warehouse}
-                  onChange={(e) => setWarehouse(e.target.value)}
+                  value={storeId}
+                  onChange={(e) => setStoreId(e.target.value)}
                   className="w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 appearance-none bg-white"
                 >
-                  {WAREHOUSES.map((w) => (
-                    <option key={w} value={w}>{w}</option>
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
                   ))}
                 </select>
                 <ChevronDown
@@ -130,21 +148,24 @@ function EditRoleModal({ target, onClose, onSave, isSaving }: EditModalProps) {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
                 />
               </div>
+              <p className="text-[11px] text-gray-400 mt-1.5">
+                {isStoreManager
+                  ? "Sends store_manager with this storeId. Warehouse is left empty — the API rejects warehouse on store managers."
+                  : "Assigns this location as the user’s warehouse."}
+              </p>
             </div>
           )}
 
-          {/* Admin note */}
           {isAdmin && (
             <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
               <AlertCircle size={15} className="text-amber-500 mt-0.5 flex-shrink-0" />
               <p className="text-xs text-amber-700">
-                Admin users are not assigned to a warehouse. The warehouse will be set to <strong>null</strong>.
+                Admin users are not assigned to a store. Warehouse and storeId will be cleared.
               </p>
             </div>
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
           <button
             onClick={onClose}
@@ -156,7 +177,7 @@ function EditRoleModal({ target, onClose, onSave, isSaving }: EditModalProps) {
           <button
             id="save-role-btn"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || (!isAdmin && !selectedStore)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {isSaving ? (
@@ -182,6 +203,7 @@ export function UserManagement() {
   const { fetchUsers, updateUserRole, user: currentUser } = useAuth();
 
   const [users, setUsers] = useState<User[]>([]);
+  const [stores, setStores] = useState<Warehouse[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -194,8 +216,12 @@ export function UserManagement() {
     setIsLoading(true);
     setLoadError("");
     try {
-      const data = await fetchUsers();
+      const [data, storeList] = await Promise.all([
+        fetchUsers(),
+        getStores().catch(() => [] as Warehouse[]),
+      ]);
       setUsers(data);
+      setStores(storeList);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : "Failed to load users");
     } finally {
@@ -214,20 +240,33 @@ export function UserManagement() {
   };
 
   // ── Save role ─────────────────────────────────────────────────────────────
-  const handleSaveRole = async (role: Role, warehouse: string | null) => {
+  const handleSaveRole = async (role: Role, warehouse: string | null, storeId: number | null) => {
     if (!editingUser) return;
     setIsSaving(true);
-    const result = await updateUserRole(editingUser.id, role, warehouse);
+    const result = await updateUserRole(editingUser.id, role, warehouse, storeId);
     setIsSaving(false);
 
     if (result.success) {
       setUsers((prev) =>
         prev.map((u) =>
-          u.id === editingUser.id ? { ...u, role, warehouse } : u
+          u.id === editingUser.id
+            ? {
+                ...u,
+                role,
+                warehouse: role === "user" ? warehouse : null,
+                storeId: role === "store_manager" ? storeId : null,
+                storeName: role === "store_manager" ? warehouse : u.storeName,
+              }
+            : u
         )
       );
       setEditingUser(null);
-      showToast("success", `${editingUser.username}'s role updated to ${role}.`);
+      showToast(
+        "success",
+        role === "store_manager"
+          ? `${editingUser.username} is now store_manager. They must log in again, then Place Order will succeed.`
+          : `${editingUser.username}'s role updated to ${role}.`
+      );
     } else {
       showToast("error", result.error ?? "Failed to update role");
     }
@@ -245,6 +284,7 @@ export function UserManagement() {
   });
 
   const adminCount = users.filter((u) => u.role === "admin").length;
+  const storeMgrCount = users.filter((u) => u.role === "store_manager").length;
   const userCount = users.filter((u) => u.role === "user").length;
 
   return (
@@ -282,7 +322,7 @@ export function UserManagement() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">User Management</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Manage user roles and warehouse assignments
+            PATCH /auth/users/{"{id}"}/role — set store_manager + storeId so Place Order can call POST /orders
           </p>
         </div>
         <button
@@ -297,7 +337,7 @@ export function UserManagement() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-4 gap-4 mb-5">
         <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3">
           <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
             <Users size={20} className="text-blue-600" />
@@ -314,6 +354,15 @@ export function UserManagement() {
           <div>
             <p className="text-xs text-gray-500">Admins</p>
             <p className="text-2xl font-bold text-gray-900">{adminCount}</p>
+          </div>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-teal-50 rounded-lg flex items-center justify-center">
+            <Store size={20} className="text-teal-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Store Managers</p>
+            <p className="text-2xl font-bold text-gray-900">{storeMgrCount}</p>
           </div>
         </div>
         <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-center gap-3">
@@ -417,11 +466,15 @@ export function UserManagement() {
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
                           u.role === "admin"
                             ? "bg-purple-100 text-purple-700"
-                            : "bg-green-100 text-green-700"
+                            : u.role === "store_manager"
+                              ? "bg-teal-100 text-teal-800"
+                              : "bg-green-100 text-green-700"
                         }`}
                       >
                         {u.role === "admin" ? (
                           <Crown size={11} />
+                        ) : u.role === "store_manager" ? (
+                          <Store size={11} />
                         ) : (
                           <UserIcon size={11} />
                         )}
@@ -429,15 +482,22 @@ export function UserManagement() {
                       </span>
                     </td>
 
-                    {/* Warehouse */}
+                    {/* Warehouse / Store */}
                     <td className="px-4 py-3">
-                      {u.warehouse ? (
+                      {u.role === "store_manager" && (u.storeName || u.storeId != null) ? (
+                        <div className="flex items-center gap-1 text-xs text-gray-700">
+                          <Building2 size={12} className="text-gray-400" />
+                          {u.storeName ?? `Store #${u.storeId}`}
+                        </div>
+                      ) : u.warehouse ? (
                         <div className="flex items-center gap-1 text-xs text-gray-700">
                           <Building2 size={12} className="text-gray-400" />
                           {u.warehouse}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-400 italic">— global admin</span>
+                        <span className="text-xs text-gray-400 italic">
+                          {u.role === "admin" ? "— global admin" : "—"}
+                        </span>
                       )}
                     </td>
 
@@ -492,6 +552,7 @@ export function UserManagement() {
       {editingUser && (
         <EditRoleModal
           target={editingUser}
+          stores={stores}
           onClose={() => setEditingUser(null)}
           onSave={handleSaveRole}
           isSaving={isSaving}

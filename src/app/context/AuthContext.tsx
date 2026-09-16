@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { apiFetch, saveToken, getToken, clearToken } from "../lib/api";
+import { apiFetch, saveToken, getToken, clearToken, SESSION_KEY, ApiError, BASE_URL } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,8 +13,9 @@ export interface User {
   initials: string;
   role: Role;
   warehouse: string | null;
-  /** storeId is set for store_manager users (from /auth/me) */
+  /** Assigned store from GET /auth/me — store_manager only */
   storeId: number | null;
+  storeName: string | null;
   created_at: string;
 }
 
@@ -39,10 +40,55 @@ interface UserResponse {
   role: Role;
   warehouse: string | null;
   storeId?: number | null;
+  store_id?: number | null;
+  storeName?: string | null;
+  store_name?: string | null;
   created_at: string;
 }
 
+function isHeadOfficeLocation(name: string | null | undefined): boolean {
+  const n = (name ?? "").trim().toUpperCase();
+  return n === "" || n === "HEAD OFFICE" || n === "HO";
+}
+
+export function isStoreRole(user: User | null | undefined): boolean {
+  if (!user) return false;
+  if (user.role === "store_manager") return true;
+  if (user.role !== "user") return false;
+  // Live POST /auth/register always saves role "user" and often drops storeId.
+  // Branch staff are identified by a non–Head Office warehouse / store.
+  if (user.storeId != null && user.storeId !== 1) return true;
+  if (user.storeName && !isHeadOfficeLocation(user.storeName)) return true;
+  if (user.warehouse && !isHeadOfficeLocation(user.warehouse)) return true;
+  return false;
+}
+
+export function homePathForUser(user: User | null | undefined): string {
+  if (!user) return "/login";
+  if (user.role === "admin") return "/";
+  if (isStoreRole(user)) return "/store";
+  return "/unauthorized";
+}
+
+export function homePathForRole(role: Role | string | null | undefined): string {
+  if (role === "admin") return "/";
+  if (role === "store_manager") return "/store";
+  return "/unauthorized";
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseStoreId(raw: Record<string, unknown>): number | null {
+  const value = raw.storeId ?? raw.store_id;
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseStoreName(raw: Record<string, unknown>): string | null {
+  const value = raw.storeName ?? raw.store_name;
+  return typeof value === "string" && value.trim() ? value : null;
+}
 
 /** Derive display-friendly fields from a raw backend user object */
 function toUser(u: UserResponse): User {
@@ -59,7 +105,8 @@ function toUser(u: UserResponse): User {
     email: u.email,
     role: u.role,
     warehouse: u.warehouse,
-    storeId: u.storeId ?? null,
+    storeId: parseStoreId(u as unknown as Record<string, unknown>),
+    storeName: parseStoreName(u as unknown as Record<string, unknown>),
     initials,
     created_at: u.created_at,
   };
@@ -102,7 +149,8 @@ function userFromToken(token: string): User {
     email: (p.email as string) ?? "",
     role: ((p.role as Role) ?? "user") as Role,
     warehouse: (p.warehouse as string | null) ?? null,
-    storeId: (p.storeId as number | null) ?? null,
+    storeId: parseStoreId(p),
+    storeName: parseStoreName(p),
     initials,
     created_at: (p.created_at as string) ?? new Date().toISOString(),
   };
@@ -112,10 +160,33 @@ function userFromToken(token: string): User {
  * Try to fetch a fresh user profile from /auth/me (optional endpoint).
  * Falls back silently — if the endpoint doesn't exist we just use the JWT data.
  */
+async function resolveStoreAssignment(user: User): Promise<User> {
+  if (user.storeId != null && user.storeId !== 1 && user.storeName) return user;
+  const loc = (user.storeName || user.warehouse || "").trim();
+  if (!loc || isHeadOfficeLocation(loc)) {
+    return user.storeId === 1 ? { ...user, storeId: null } : user;
+  }
+  try {
+    const stores = await apiFetch<Array<Record<string, unknown>>>("/stores");
+    const match = (stores ?? []).find(
+      (s) => String(s.name ?? "").trim().toLowerCase() === loc.toLowerCase()
+    );
+    if (!match) return user;
+    const id = Number(match.id);
+    const name = String(match.name ?? loc);
+    if (!Number.isFinite(id) || id === 1 || isHeadOfficeLocation(name)) {
+      return { ...user, storeId: null, storeName: name };
+    }
+    return { ...user, storeId: id, storeName: name };
+  } catch {
+    return user;
+  }
+}
+
 async function tryFetchMe(): Promise<User | null> {
   try {
     const raw = await apiFetch<UserResponse>("/auth/me");
-    return toUser(raw);
+    return resolveStoreAssignment(toUser(raw));
   } catch {
     return null;
   }
@@ -129,13 +200,17 @@ interface AuthContextType {
   isStoreManager: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (
+    username: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string; role?: Role; homePath?: string }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateUserRole: (
     userId: number,
     role: Role,
-    warehouse: string | null
+    warehouse: string | null,
+    storeId?: number | null
   ) => Promise<{ success: boolean; error?: string }>;
   updateUserStatus: (
     userId: number,
@@ -146,8 +221,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const SESSION_KEY = "hal_pos_user";
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -163,15 +236,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const token = getToken();
 
         if (stored && token) {
-          // Immediately restore from localStorage so the app is interactive
-          setUser(JSON.parse(stored));
+          // Restore cached user so the first paint is not a blank spinner,
+          // then replace it with GET /auth/me (source of truth for role/store).
+          setUser(JSON.parse(stored) as User);
 
-          // Optionally refresh from /auth/me in background (no-op if not available)
-          const fresh = await tryFetchMe();
-          if (fresh) {
-            setUser(fresh);
-            localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+          try {
+            const fresh = await apiFetch<UserResponse>("/auth/me");
+            const mapped = await resolveStoreAssignment(toUser(fresh));
+            setUser(mapped);
+            localStorage.setItem(SESSION_KEY, JSON.stringify(mapped));
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 401) {
+              clearToken();
+              localStorage.removeItem(SESSION_KEY);
+              setUser(null);
+            }
+            // Other errors (network): keep the cached session until /auth/me works.
           }
+        } else {
+          clearToken();
+          localStorage.removeItem(SESSION_KEY);
+          setUser(null);
         }
       } catch {
         // Corrupt localStorage — clean up
@@ -191,12 +276,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (
     username: string,
     password: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; role?: Role; homePath?: string }> => {
     try {
-      const baseUrl = window.location.protocol === "http:"
-        ? ((import.meta.env.VITE_API_BASE_URL as string) ?? "")
-        : "/api";
-      const res = await fetch(`${baseUrl}/auth/login`, {
+      const res = await fetch(`${BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -224,17 +306,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data: LoginResponse = await res.json();
       saveToken(data.access_token);
 
-      // Primary: decode user info directly from the JWT (no extra round-trip)
-      let loggedInUser = userFromToken(data.access_token);
-
-      // Enhancement: try /auth/me to get richer data (e.g. email, warehouse)
+      // JWT is a fallback only. GET /auth/me is the source of truth for role/store.
+      let loggedInUser = await resolveStoreAssignment(userFromToken(data.access_token));
       const fresh = await tryFetchMe();
       if (fresh) loggedInUser = fresh;
 
       setUser(loggedInUser);
       localStorage.setItem(SESSION_KEY, JSON.stringify(loggedInUser));
 
-      return { success: true };
+      return {
+        success: true,
+        role: loggedInUser.role,
+        homePath: homePathForUser(loggedInUser),
+      };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Login failed";
       return { success: false, error: message };
@@ -271,12 +355,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUserRole = async (
     userId: number,
     role: Role,
-    warehouse: string | null
+    warehouse: string | null,
+    storeId?: number | null
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       await apiFetch<UserResponse>(`/auth/users/${userId}/role`, {
         method: "PATCH",
-        body: JSON.stringify({ role, warehouse }),
+        body: JSON.stringify({
+          role,
+          // Backend rejects warehouse on admin and store_manager.
+          warehouse: role === "user" ? warehouse : null,
+          storeId: role === "store_manager" ? storeId ?? null : null,
+        }),
       });
       return { success: true };
     } catch (err: unknown) {
@@ -329,7 +419,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isAdmin: user?.role === "admin",
-        isStoreManager: user?.role === "store_manager",
+        isStoreManager: isStoreRole(user),
         isAuthenticated: !!user,
         isLoading,
         login,

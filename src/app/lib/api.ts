@@ -1,14 +1,19 @@
-// ─── Base URL resolution ──────────────────────────────────────────────────────
-// On HTTPS (Vercel production) browsers block HTTP backend calls (mixed content).
-// vercel.json rewrites /api/* → http://103.55.104.142:5022/* server-side,
-// so we use the /api proxy path when served over HTTPS.
-// On plain HTTP (local dev) we use the direct backend URL from .env.
-const isDev = window.location.protocol === "http:";
-const BASE_URL = isDev
-  ? ((import.meta.env.VITE_API_BASE_URL as string) ?? "")
-  : "/api";
+// Same-origin `/api`:
+// - local: Vite proxies /api → VITE_API_BASE_URL (avoids CORS; backend allowlists :5005 only)
+// - production: vercel.json rewrites /api → backend
+export const BASE_URL = "/api";
 
 const TOKEN_KEY = "hal_pos_token";
+export const SESSION_KEY = "hal_pos_user";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 /** Save the JWT access token to localStorage */
 export function saveToken(token: string) {
@@ -28,7 +33,7 @@ export function clearToken() {
 /**
  * Thin wrapper around `fetch` that:
  * - Prepends BASE_URL
- * - Sets Content-Type: application/json
+ * - Sets Content-Type: application/json unless the body is FormData
  * - Injects the Bearer token when present
  * - Throws a descriptive error on non-2xx responses
  */
@@ -38,10 +43,15 @@ export async function apiFetch<T = unknown>(
 ): Promise<T> {
   const token = getToken();
 
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
+  if (!isFormData && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
@@ -70,10 +80,29 @@ export async function apiFetch<T = unknown>(
     } catch {
       // ignore JSON parse errors
     }
-    throw new Error(message);
+
+    // Expired / invalid session — force re-login. Login itself uses a raw fetch.
+    if (res.status === 401 && token) {
+      clearToken();
+      localStorage.removeItem(SESSION_KEY);
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.replace("/login");
+      }
+    }
+
+    throw new ApiError(message, res.status);
   }
 
   // Some endpoints return 204 No Content
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export function buildQuery(
+  params: Record<string, string | number | boolean | undefined | null>
+): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== "" && v !== null)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+  return parts.length ? `?${parts.join("&")}` : "";
 }

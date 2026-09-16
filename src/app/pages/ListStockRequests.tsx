@@ -34,10 +34,11 @@ function fmtDate(iso: string) {
   });
 }
 
-const STATUS_STYLES: Record<StockRequestStatus, { badge: string; dot: string }> = {
+const STATUS_STYLES: Record<string, { badge: string; dot: string }> = {
   Pending: { badge: "bg-amber-100 text-amber-700", dot: "bg-amber-500" },
   Approved: { badge: "bg-blue-100 text-blue-700", dot: "bg-blue-500" },
   Rejected: { badge: "bg-red-100 text-red-600", dot: "bg-red-400" },
+  "Sell Created": { badge: "bg-indigo-100 text-indigo-700", dot: "bg-indigo-500" },
   "Transfer Created": { badge: "bg-indigo-100 text-indigo-700", dot: "bg-indigo-500" },
   "In Transit": { badge: "bg-purple-100 text-purple-700", dot: "bg-purple-500" },
   Delivered: { badge: "bg-green-100 text-green-700", dot: "bg-green-500" },
@@ -46,10 +47,11 @@ const STATUS_STYLES: Record<StockRequestStatus, { badge: string; dot: string }> 
 
 function StatusBadge({ status }: { status: StockRequestStatus }) {
   const s = STATUS_STYLES[status] ?? STATUS_STYLES["Pending"];
+  const label = status === "Transfer Created" ? "Sell Created" : status;
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${s.badge}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-      {status}
+      {label}
     </span>
   );
 }
@@ -153,11 +155,11 @@ function DetailModal({ requestId, isAdmin, onClose, onStatusChanged }: DetailMod
                 </div>
               )}
 
-              {/* Transfer link */}
-              {req.transfer_id && (
+              {/* Sell link */}
+              {req.sell_id && (
                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-center gap-2">
                   <PackageSearch size={16} className="text-indigo-500 shrink-0" />
-                  <p className="text-sm text-indigo-700">Linked to Transfer <span className="font-bold">#{req.transfer_id}</span></p>
+                  <p className="text-sm text-indigo-700">Linked to Sell <span className="font-bold">#{req.sell_id}</span></p>
                 </div>
               )}
 
@@ -267,7 +269,8 @@ const STATUS_FILTERS: Array<{ label: string; value: string }> = [
   { label: "Pending", value: "Pending" },
   { label: "Approved", value: "Approved" },
   { label: "Rejected", value: "Rejected" },
-  { label: "Transfer Created", value: "Transfer Created" },
+  // API still filters on "Transfer Created" until backend rewrite
+  { label: "Sell Created", value: "Transfer Created" },
   { label: "In Transit", value: "In Transit" },
   { label: "Delivered", value: "Delivered" },
   { label: "Cancelled", value: "Cancelled" },
@@ -447,7 +450,7 @@ export function ListStockRequests() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Items</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Submitted</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Transfer</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Sell</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -481,8 +484,8 @@ export function ListStockRequests() {
                       {fmtDate(r.created_at)}
                     </td>
                     <td className="px-4 py-3 text-xs">
-                      {r.transfer_id ? (
-                        <span className="text-indigo-600 font-medium">#{r.transfer_id}</span>
+                      {r.sell_id ? (
+                        <span className="text-indigo-600 font-medium">#{r.sell_id}</span>
                       ) : (
                         <span className="text-gray-300">—</span>
                       )}

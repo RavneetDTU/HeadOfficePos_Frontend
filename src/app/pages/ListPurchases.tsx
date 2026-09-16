@@ -5,6 +5,7 @@ import {
   Search,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { AddPaymentModal } from "../components/modals/AddPaymentModal";
 import { DeleteConfirmModal } from "../components/modals/DeleteConfirmModal";
 import { EmailSaleModal } from "../components/modals/EmailSaleModal";
@@ -65,6 +66,47 @@ function fmtAmt(val: number | string | undefined): string {
   return Number(val).toLocaleString("en-ZA", { minimumFractionDigits: 2 });
 }
 
+function pickStr(...vals: unknown[]): string | undefined {
+  for (const val of vals) {
+    if (typeof val === "string" && val.trim()) return val.trim();
+    if (typeof val === "number" && Number.isFinite(val)) return String(val);
+  }
+  return undefined;
+}
+
+function mapPurchaseRecord(raw: Record<string, unknown>): PurchaseRecord {
+  const details = (raw.supplierDetails ?? raw.supplier_details ?? {}) as Record<string, unknown>;
+  return {
+    id: Number(raw.id ?? 0),
+    date: String(raw.date ?? ""),
+    reference: pickStr(raw.reference, raw.referenceNo, raw.reference_no),
+    supplier:
+      pickStr(
+        raw.supplier,
+        raw.supplierName,
+        raw.supplier_name,
+        raw.supplierCompany,
+        raw.supplier_company,
+        details.company,
+        details.name
+      ) ?? "",
+    supplierPhone: pickStr(
+      raw.supplierPhone,
+      raw.supplier_phone,
+      details.phone
+    ),
+    warehouse: pickStr(raw.warehouse, raw.warehouseName, raw.warehouse_name),
+    purchaseStatus: pickStr(raw.purchaseStatus, raw.purchase_status, raw.status),
+    status: pickStr(raw.status, raw.purchaseStatus, raw.purchase_status),
+    paymentStatus: pickStr(raw.paymentStatus, raw.payment_status),
+    grandTotal: Number(raw.grandTotal ?? raw.grand_total ?? 0),
+    paid: Number(raw.paid ?? 0),
+    balance: Number(raw.balance ?? 0),
+    notes: pickStr(raw.notes, raw.note),
+    supplierId: raw.supplierId ?? raw.supplier_id ?? null,
+  };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function ListPurchases() {
   // ── API and Pagination state ───────────────────────────────────────────────
@@ -109,12 +151,20 @@ export function ListPurchases() {
       if (raw && typeof raw === "object") {
         const obj = raw as Record<string, unknown>;
         const candidate = obj.purchases ?? obj.data ?? obj.items ?? obj.results;
-        if (Array.isArray(candidate)) records = candidate as PurchaseRecord[];
-        else if (Array.isArray(raw)) records = raw as PurchaseRecord[];
+        if (Array.isArray(candidate)) {
+          records = candidate.map((item) => mapPurchaseRecord((item ?? {}) as Record<string, unknown>));
+        } else if (Array.isArray(raw)) {
+          records = raw.map((item) => mapPurchaseRecord((item ?? {}) as Record<string, unknown>));
+        }
         total = typeof obj.total === "number" ? obj.total : records.length;
-        pages = typeof obj.totalPages === "number" ? obj.totalPages : Math.ceil(total / limit);
+        pages =
+          typeof obj.totalPages === "number"
+            ? obj.totalPages
+            : typeof obj.total_pages === "number"
+              ? obj.total_pages
+              : Math.ceil(total / limit);
       } else if (Array.isArray(raw)) {
-        records = raw as PurchaseRecord[];
+        records = raw.map((item) => mapPurchaseRecord((item ?? {}) as Record<string, unknown>));
         total = records.length;
         pages = Math.ceil(total / limit);
       }
@@ -204,12 +254,12 @@ export function ListPurchases() {
               Please use the table below to navigate or filter the results.
             </p>
           </div>
-          <a
-            href="/purchases/add"
+          <Link
+            to="/purchases/add"
             className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors font-medium"
           >
             + Add Purchase
-          </a>
+          </Link>
         </div>
 
         {/* Show / per-page selector */}

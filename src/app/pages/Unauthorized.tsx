@@ -1,5 +1,5 @@
-import { ShieldOff, LogOut } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { ShieldOff, LogOut, LayoutDashboard } from "lucide-react";
+import { useAuth, homePathForUser, isStoreRole } from "../context/AuthContext";
 import { useNavigate } from "react-router";
 
 export function Unauthorized() {
@@ -22,7 +22,7 @@ export function Unauthorized() {
         {/* Text */}
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Restricted</h1>
         <p className="text-gray-500 text-sm leading-relaxed mb-2">
-          HeadOffice POS is reserved for Head Office administrators only.
+          You do not have permission to view this page with the current account.
         </p>
         {user && (
           <p className="text-gray-400 text-xs mb-8">
@@ -38,6 +38,15 @@ export function Unauthorized() {
         </div>
 
         <div className="space-y-3">
+          {user && (user.role === "admin" || isStoreRole(user)) && (
+            <button
+              onClick={() => navigate(homePathForUser(user), { replace: true })}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-all"
+            >
+              <LayoutDashboard size={16} />
+              Go to my dashboard
+            </button>
+          )}
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold transition-all"
@@ -46,7 +55,7 @@ export function Unauthorized() {
             Sign out and use a different account
           </button>
           <p className="text-xs text-gray-400">
-            Contact your system administrator to request admin access.
+            Contact your system administrator if you need a different role.
           </p>
         </div>
       </div>

@@ -38,7 +38,7 @@ export function LoginPage() {
     setIsLoading(false);
 
     if (result.success) {
-      navigate("/", { replace: true });
+      navigate(result.homePath ?? "/", { replace: true });
     } else {
       setError(result.error ?? "Login failed");
     }
@@ -60,7 +60,7 @@ export function LoginPage() {
           </div>
           <h1 className="text-2xl font-bold text-white tracking-wide">Hearing Aid Labs</h1>
           <p className="text-sm text-indigo-400 font-semibold tracking-wider uppercase mt-1">
-            HeadOffice POS — Head Office
+            Hearing Aid Labs POS
           </p>
         </div>
 
@@ -70,10 +70,12 @@ export function LoginPage() {
           <div className="mb-6">
             <div className="flex items-center justify-center gap-1.5 mb-3">
               <ShieldCheck size={14} className="text-indigo-400" />
-              <span className="text-xs text-indigo-400 font-semibold tracking-wider uppercase">Admin Access Only</span>
+              <span className="text-xs text-indigo-400 font-semibold tracking-wider uppercase">Authorized access</span>
             </div>
             <h2 className="text-xl font-bold text-center text-white">Welcome Back</h2>
-            <p className="text-sm text-gray-400 mt-1 text-center">Sign in to manage your head office.</p>
+            <p className="text-sm text-gray-400 mt-1 text-center">
+              Sign in — your role determines Head Office or Store POS.
+            </p>
           </div>
 
           {/* Error Alert */}
@@ -152,7 +154,7 @@ export function LoginPage() {
               ) : (
                 <>
                   <LogIn size={16} />
-                  Sign In to HeadOffice POS
+                  Sign In
                 </>
               )}
             </button>
@@ -160,7 +162,7 @@ export function LoginPage() {
 
           <div className="mt-8 pt-6 border-t border-white/5 text-center">
             <span className="text-xs text-gray-500">
-              Security Notice: Authorized admin access only.
+              Security Notice: Access is based on your assigned role.
             </span>
           </div>
 
@@ -168,7 +170,7 @@ export function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-gray-600 mt-8">
-          © 2026 Hearing Aid Lab (PTY) LTD · HeadOffice POS · All rights reserved
+          © 2026 Hearing Aid Lab (PTY) LTD · All rights reserved
         </p>
       </div>
     </div>

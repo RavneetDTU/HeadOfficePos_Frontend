@@ -54,7 +54,7 @@ export function ListSuppliers() {
     } catch (e) {
       console.error("Failed to load suppliers list:", e);
       setError(
-        "Failed to load suppliers. The /suppliers API endpoint may not be live yet — this page is ready to go once the backend team deploys it."
+        "Failed to load suppliers. Please try again."
       );
       setSuppliers([]);
       setTotal(0);

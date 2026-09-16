@@ -213,7 +213,7 @@ export function AddSale() {
       try {
         // Use GET /sales/stock — the ONLY endpoint that returns real-time deducted
         // warehouse stock (inStock field). /warehouse/{id}/inventory only has initial
-        // opening stock and never decrements on sales/transfers.
+        // opening stock and never decrements on sales/sells.
         let items: any[] = [];
         if (!isAdmin) {
           // Non-admin: fall back to their own store inventory

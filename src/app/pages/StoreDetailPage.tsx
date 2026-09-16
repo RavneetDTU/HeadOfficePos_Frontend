@@ -5,14 +5,14 @@ import {
   AlertTriangle, BarChart3, ShoppingCart, ArrowRightLeft,
   CheckCircle2, Clock, XCircle, DollarSign,
 } from "lucide-react";
-import { getStoreDashboard, getTransfers, getTransferItemsWithCache } from "../services/inventoryService";
-import type { StoreDashboardSummary, Transfer } from "../types/inventory";
+import { getStoreDashboard, getSells, getSellItemsWithCache } from "../services/inventoryService";
+import type { StoreDashboardSummary, Sell } from "../types/inventory";
 import { apiFetch } from "../lib/api";
 
 const zar = (n: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(n);
 
-type TabId = "overview" | "sales" | "inventory" | "transfers";
+type TabId = "overview" | "sales" | "inventory" | "sells";
 
 interface MetricCard {
   label: string;
@@ -67,7 +67,7 @@ export function StoreDetailPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [loading, setLoading] = useState(true);
   const [dash, setDash] = useState<StoreDashboardSummary | null>(null);
-  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [sells, setSells] = useState<Sell[]>([]);
   const [error, setError] = useState("");
 
   const loadData = async () => {
@@ -83,7 +83,7 @@ export function StoreDetailPage() {
           ? apiFetch<any[]>(`/warehouse/${locationId}/inventory`)
           : apiFetch<any[]>(`/sales/stock?storeId=${locationId}`),
         apiFetch<any>(`/sales?limit=100&storeId=${locationId}`),
-        getTransfers(
+        getSells(
           storeType === "warehouse"
             ? { warehouseId: locationId, limit: 100 }
             : { storeId: locationId, limit: 100 }
@@ -154,8 +154,8 @@ export function StoreDetailPage() {
         })),
       };
 
-      // Filter transfers in frontend just in case backend query parameters return a wider set
-      const rawTrans = ((tData?.transfers ?? []) as Transfer[]).filter((t) => {
+      // Filter sells in frontend just in case backend query parameters return a wider set
+      const rawSells = ((tData?.sells ?? []) as Sell[]).filter((t) => {
         if (storeType === "warehouse") {
           return t.from_warehouse_id === locationId;
         } else {
@@ -165,11 +165,11 @@ export function StoreDetailPage() {
 
       if (storeType === "store") {
         let subtractQty = 0;
-        for (const t of rawTrans) {
+        for (const t of rawSells) {
           const isUndelivered = t.status === "Pending" || t.status === "Approved" || t.status === "In Transit";
           const isCancelled = t.status === "Cancelled" || t.status === "Rejected";
           if (isUndelivered || isCancelled) {
-            const tItems = await getTransferItemsWithCache(t.id);
+            const tItems = await getSellItemsWithCache(t.id);
             subtractQty += tItems.reduce((acc, i) => acc + i.quantity, 0);
           }
         }
@@ -178,9 +178,9 @@ export function StoreDetailPage() {
         }
       } else {
         let restoredQty = 0;
-        const whTrans = rawTrans.filter(t => t.from_warehouse_id === locationId && (t.status === "Cancelled" || t.status === "Rejected"));
+        const whTrans = rawSells.filter(t => t.from_warehouse_id === locationId && (t.status === "Cancelled" || t.status === "Rejected"));
         for (const t of whTrans) {
-          const tItems = await getTransferItemsWithCache(t.id);
+          const tItems = await getSellItemsWithCache(t.id);
           restoredQty += tItems.reduce((acc, i) => acc + i.quantity, 0);
         }
         if (dashData && dashData.inventory_summary) {
@@ -191,10 +191,10 @@ export function StoreDetailPage() {
       setDash(dashData);
 
       // Pre-load / enrich item counts and values from detail endpoint
-      const enrichedTrans = await Promise.all(
-        rawTrans.map(async (t) => {
+      const enrichedSells = await Promise.all(
+        rawSells.map(async (t) => {
           try {
-            const items = await getTransferItemsWithCache(t.id);
+            const items = await getSellItemsWithCache(t.id);
             const totalQty = items.reduce((acc, item) => acc + item.quantity, 0);
             const totalVal = items.reduce((acc, item) => acc + (item.quantity * (item.purchasePrice ?? 0)), 0);
             return { ...t, total_items: totalQty, total_value: totalVal };
@@ -203,7 +203,7 @@ export function StoreDetailPage() {
           }
         })
       );
-      setTransfers(enrichedTrans);
+      setSells(enrichedSells);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load store data");
     } finally {
@@ -217,7 +217,7 @@ export function StoreDetailPage() {
     { id: "overview", label: "Overview", icon: <BarChart3 size={15} /> },
     ...(storeType === "store" ? [{ id: "sales", label: "Sales", icon: <TrendingUp size={15} /> }] : []),
     { id: "inventory", label: "Inventory", icon: <Package size={15} /> },
-    { id: "transfers", label: "Transfers", icon: <ArrowRightLeft size={15} /> },
+    { id: "sells", label: "Sales", icon: <ArrowRightLeft size={15} /> },
   ] as { id: TabId; label: string; icon: React.ReactNode }[];
 
   const salesMetrics: MetricCard[] = dash ? [
@@ -284,12 +284,12 @@ export function StoreDetailPage() {
     },
   ] : [];
 
-  // Transfer counts
-  const transferCounts = {
-    inTransit: transfers.filter(t => t.status === "In Transit").length,
-    delivered: transfers.filter(t => t.status === "Delivered" || t.status === "Completed").length,
-    pending: transfers.filter(t => t.status === "Pending" || t.status === "Approved").length,
-    cancelled: transfers.filter(t => t.status === "Cancelled" || t.status === "Rejected").length,
+  // Sell counts
+  const sellCounts = {
+    inTransit: sells.filter(t => t.status === "In Transit").length,
+    delivered: sells.filter(t => t.status === "Delivered" || t.status === "Completed").length,
+    pending: sells.filter(t => t.status === "Pending" || t.status === "Approved").length,
+    cancelled: sells.filter(t => t.status === "Cancelled" || t.status === "Rejected").length,
   };
 
   return (
@@ -372,14 +372,14 @@ export function StoreDetailPage() {
                 {inventoryMetrics.slice(0, 2).map((m) => <MetricCard key={m.label} m={m} />)}
               </div>
 
-              {/* Transfer Status Row */}
-              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Transfer Status</h2>
+              {/* Sell Status Row */}
+              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Sale Status</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 {[
-                  { label: "In Transit", value: transferCounts.inTransit, icon: <ArrowRightLeft size={16} className="text-amber-400" />, color: "bg-amber-500/10 border-amber-500/20" },
-                  { label: "Delivered", value: transferCounts.delivered, icon: <CheckCircle2 size={16} className="text-emerald-400" />, color: "bg-emerald-500/10 border-emerald-500/20" },
-                  { label: "Pending", value: transferCounts.pending, icon: <Clock size={16} className="text-blue-400" />, color: "bg-blue-500/10 border-blue-500/20" },
-                  { label: "Cancelled", value: transferCounts.cancelled, icon: <XCircle size={16} className="text-gray-400" />, color: "bg-gray-100/60 border-gray-200" },
+                  { label: "In Transit", value: sellCounts.inTransit, icon: <ArrowRightLeft size={16} className="text-amber-400" />, color: "bg-amber-500/10 border-amber-500/20" },
+                  { label: "Delivered", value: sellCounts.delivered, icon: <CheckCircle2 size={16} className="text-emerald-400" />, color: "bg-emerald-500/10 border-emerald-500/20" },
+                  { label: "Pending", value: sellCounts.pending, icon: <Clock size={16} className="text-blue-400" />, color: "bg-blue-500/10 border-blue-500/20" },
+                  { label: "Cancelled", value: sellCounts.cancelled, icon: <XCircle size={16} className="text-gray-400" />, color: "bg-gray-100/60 border-gray-200" },
                 ].map((item) => (
                   <div key={item.label} className={`rounded-xl p-4 border ${item.color}`}>
                     <div className="flex items-center gap-2 mb-2">{item.icon}<span className="text-xs text-gray-400">{item.label}</span></div>
@@ -500,14 +500,14 @@ export function StoreDetailPage() {
           )}
 
           {/* TRANSFERS TAB */}
-          {activeTab === "transfers" && (
+          {activeTab === "sells" && (
             <div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 {[
-                  { label: "In Transit", value: transferCounts.inTransit, icon: <ArrowRightLeft size={16} className="text-amber-400" />, color: "bg-amber-500/10 border-amber-500/20" },
-                  { label: "Delivered", value: transferCounts.delivered, icon: <CheckCircle2 size={16} className="text-emerald-400" />, color: "bg-emerald-500/10 border-emerald-500/20" },
-                  { label: "Pending", value: transferCounts.pending, icon: <Clock size={16} className="text-blue-400" />, color: "bg-blue-500/10 border-blue-500/20" },
-                  { label: "Cancelled", value: transferCounts.cancelled, icon: <XCircle size={16} className="text-gray-400" />, color: "bg-gray-100/60 border-gray-200" },
+                  { label: "In Transit", value: sellCounts.inTransit, icon: <ArrowRightLeft size={16} className="text-amber-400" />, color: "bg-amber-500/10 border-amber-500/20" },
+                  { label: "Delivered", value: sellCounts.delivered, icon: <CheckCircle2 size={16} className="text-emerald-400" />, color: "bg-emerald-500/10 border-emerald-500/20" },
+                  { label: "Pending", value: sellCounts.pending, icon: <Clock size={16} className="text-blue-400" />, color: "bg-blue-500/10 border-blue-500/20" },
+                  { label: "Cancelled", value: sellCounts.cancelled, icon: <XCircle size={16} className="text-gray-400" />, color: "bg-gray-100/60 border-gray-200" },
                 ].map((item) => (
                   <div key={item.label} className={`rounded-xl p-4 border ${item.color}`}>
                     <div className="flex items-center gap-2 mb-2">{item.icon}<span className="text-xs text-gray-400">{item.label}</span></div>
@@ -516,7 +516,7 @@ export function StoreDetailPage() {
                 ))}
               </div>
 
-              {transfers.length > 0 && (
+              {sells.length > 0 && (
                 <div className="bg-white border border-gray-250 rounded-2xl overflow-hidden shadow-sm">
                   <table className="w-full text-sm">
                     <thead>
@@ -530,9 +530,9 @@ export function StoreDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {transfers.slice(0, 10).map((t) => (
+                      {sells.slice(0, 10).map((t) => (
                         <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-5 py-3 font-mono text-xs text-blue-600 font-medium">{t.transfer_reference}</td>
+                          <td className="px-5 py-3 font-mono text-xs text-blue-600 font-medium">{t.sell_reference}</td>
                           <td className="px-5 py-3 text-gray-700 text-xs">{t.from_warehouse_name}</td>
                           <td className="px-5 py-3 text-gray-700 text-xs">{t.to_store_name}</td>
                           <td className="px-5 py-3 text-center text-gray-600">{t.total_items}</td>
@@ -548,7 +548,7 @@ export function StoreDetailPage() {
                               {t.status}
                             </span>
                           </td>
-                          <td className="px-5 py-3 text-gray-500 text-xs">{new Date(t.transfer_date).toLocaleDateString()}</td>
+                          <td className="px-5 py-3 text-gray-500 text-xs">{new Date(t.sell_date).toLocaleDateString()}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -557,11 +557,11 @@ export function StoreDetailPage() {
               )}
 
               <div className="flex gap-3 mt-5">
-                <button onClick={() => navigate("/transfers/add")} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-xl font-medium">
-                  <ArrowRightLeft size={14} /> New Transfer
+                <button onClick={() => navigate("/sells/add")} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-xl font-medium">
+                  <ArrowRightLeft size={14} /> New Sale
                 </button>
-                <button onClick={() => navigate("/transfers")} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-xl font-medium">
-                  View All Transfers
+                <button onClick={() => navigate("/sells")} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-xl font-medium">
+                  View All Sales
                 </button>
               </div>
             </div>

@@ -233,9 +233,9 @@ export interface InventoryAdjustmentOut {
   createdAt: string;
 }
 
-// ─── Warehouse Transfers ──────────────────────────────────────────────────────
+// ─── Warehouse Sells ──────────────────────────────────────────────────────
 
-export interface WarehouseTransferItem {
+export interface WarehouseSellItem {
   productId: number;
   productSku: string;
   productName: string;
@@ -243,7 +243,7 @@ export interface WarehouseTransferItem {
   unitCost?: number;
 }
 
-export interface WarehouseTransferListItemOut {
+export interface WarehouseSellListItemOut {
   id: number;
   reference?: string;
   warehouseId?: number;
@@ -258,7 +258,7 @@ export interface WarehouseTransferListItemOut {
   [key: string]: unknown;
 }
 
-export interface WarehouseTransferDetailOut {
+export interface WarehouseSellDetailOut {
   id: number;
   reference?: string;
   warehouseId?: number;
@@ -267,18 +267,18 @@ export interface WarehouseTransferDetailOut {
   storeName?: string;
   status?: string;
   createdAt?: string;
-  items?: WarehouseTransferItem[];
+  items?: WarehouseSellItem[];
   [key: string]: unknown;
 }
 
-export interface WarehouseTransferListResponse {
-  transfers: WarehouseTransferListItemOut[];
+export interface WarehouseSellListResponse {
+  sells: WarehouseSellListItemOut[];
   total: number;
   total_pages: number;
   current_page: number;
 }
 
-export interface WarehouseTransferCreate {
+export interface WarehouseSellCreate {
   warehouseId: number;
   storeId: number;
   items: Array<{
@@ -289,15 +289,15 @@ export interface WarehouseTransferCreate {
   notes?: string;
 }
 
-export interface WarehouseTransferResponse {
+export interface WarehouseSellResponse {
   id: number;
   reference?: string;
   status?: string;
   [key: string]: unknown;
 }
 
-// Legacy transfer types (kept for backward compat with existing pages)
-export interface TransferItem {
+// Legacy sell types (kept for backward compat with existing pages)
+export interface SellItem {
   id?: number;
   product_id: number;
   sku: string;
@@ -308,10 +308,10 @@ export interface TransferItem {
   subtotal?: number;
 }
 
-export interface Transfer {
+export interface Sell {
   id: number;
-  transfer_reference: string;
-  transfer_date: string;
+  sell_reference: string;
+  sell_date: string;
   from_warehouse_id: number;
   from_warehouse_name: string;
   to_store_id: number;
@@ -320,22 +320,22 @@ export interface Transfer {
   status: "Completed" | "Pending" | "Cancelled" | "Approved" | "In Transit" | "Delivered" | "Rejected";
   created_by: string;
   created_at: string;
-  items?: TransferItem[];
+  items?: SellItem[];
   total_items: number;
   total_value: number;
 }
 
-export interface TransferListResponse {
-  transfers: Transfer[];
+export interface SellListResponse {
+  sells: Sell[];
   total: number;
   total_pages: number;
   current_page: number;
 }
 
-export interface CreateTransferPayload {
+export interface CreateSellPayload {
   from_warehouse_id: number;
   to_store_id: number;
-  transfer_date: string;
+  sell_date: string;
   notes?: string;
   items: Array<{
     product_id: number;
@@ -347,8 +347,8 @@ export interface CreateTransferPayload {
 // ─── Store Purchase History ───────────────────────────────────────────────────
 
 export interface StorePurchaseHistoryItem {
-  transfer_reference: string;
-  transfer_date: string;
+  sell_reference: string;
+  sell_date: string;
   product_name: string;
   sku: string;
   quantity_received: number;
@@ -359,7 +359,7 @@ export interface StorePurchaseHistoryItem {
 }
 
 export interface StorePurchaseHistoryResponse {
-  transfers: StorePurchaseHistoryItem[];
+  sells: StorePurchaseHistoryItem[];
   total: number;
   total_pages: number;
   current_page: number;
@@ -480,7 +480,7 @@ export interface WarehouseDashboardOut {
   totalStock?: number;
   totalValue?: number;
   recentPurchases?: Array<{ [key: string]: unknown }>;
-  recentTransfers?: Array<{ [key: string]: unknown }>;
+  recentSells?: Array<{ [key: string]: unknown }>;
   lowStockItems?: Array<{ [key: string]: unknown }>;
   [key: string]: unknown;
 }
@@ -526,8 +526,8 @@ export interface AdminDashboardSummary {
     total_sales_count_today: number;
     total_sales_count_month: number;
   };
-  recent_transfers: Array<{
-    transfer_reference: string;
+  recent_sells: Array<{
+    sell_reference: string;
     to_store_name: string;
     total_value: number;
     date: string;
@@ -563,7 +563,7 @@ export interface StoreDashboardSummary {
     month_sales_count: number;
   };
   recent_purchases_from_warehouse: Array<{
-    transfer_reference: string;
+    sell_reference: string;
     date: string;
     product_name: string;
     quantity: number;
@@ -590,7 +590,7 @@ export interface WarehouseInventoryParams extends PaginationParams {
   low_stock?: boolean;
 }
 
-export interface TransferListParams extends PaginationParams {
+export interface SellListParams extends PaginationParams {
   from_warehouse_id?: number;
   to_store_id?: number;
   status?: string;
@@ -648,12 +648,14 @@ export interface ProductCreatePayload {
   name: string;
   category?: string | null;
   brand?: string | null;
+  model?: string | null;
   unit?: string;
   costPrice?: number;
   sellingPrice?: number;
   taxPercent?: number;
   description?: string | null;
   imageUrl?: string | null;
+  thumbnailUrl?: string | null;
   status?: string;
   alertQty?: number;
   openingStock?: Array<{ warehouseId: number; quantity: number }>;
@@ -826,7 +828,8 @@ export type StockRequestStatus =
   | "Pending"
   | "Approved"
   | "Rejected"
-  | "Transfer Created"
+  | "Sell Created"
+  | "Transfer Created" // legacy backend value until rewrite
   | "In Transit"
   | "Delivered"
   | "Cancelled";
@@ -848,7 +851,7 @@ export interface StockRequest {
   requested_by?: string;
   status: StockRequestStatus;
   remarks?: string | null;
-  transfer_id?: number | null;
+  sell_id?: number | null;
   items: StockRequestItem[];
   created_at: string;
   updated_at: string;

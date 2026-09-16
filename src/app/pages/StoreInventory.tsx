@@ -77,7 +77,7 @@ export function StoreInventory() {
     setErrorHistory("");
     try {
       const res = await getMyStorePurchaseHistory({ page: 1, limit: 50 });
-      setHistory(res.transfers);
+      setHistory(res.sells);
     } catch (e) {
       setErrorHistory(e instanceof Error ? e.message : "Failed to load history");
     } finally {
@@ -143,7 +143,7 @@ export function StoreInventory() {
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 flex items-center gap-2">
           <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
           <p className="text-sm text-amber-800">
-            <span className="font-semibold">{lowStockCount} product{lowStockCount > 1 ? "s are" : " is"} below</span> the minimum stock level. Contact your admin to arrange a transfer.
+            <span className="font-semibold">{lowStockCount} product{lowStockCount > 1 ? "s are" : " is"} below</span> the minimum stock level. Contact your admin to arrange a sale.
           </p>
         </div>
       )}
@@ -206,7 +206,7 @@ export function StoreInventory() {
                     <tr><td colSpan={9} className="text-center py-16">
                       <Package size={32} className="text-gray-200 mx-auto mb-2" />
                       <p className="text-sm text-gray-400">No stock in your store yet</p>
-                      <p className="text-xs text-gray-400 mt-1">Contact your admin to transfer products to your store</p>
+                      <p className="text-xs text-gray-400 mt-1">Contact your admin to sell products to your store</p>
                     </td></tr>
                   ) : items.map((item, i) => (
                     <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
@@ -284,14 +284,14 @@ export function StoreInventory() {
                   ) : history.length === 0 ? (
                     <tr><td colSpan={9} className="text-center py-16">
                       <Truck size={32} className="text-gray-200 mx-auto mb-2" />
-                      <p className="text-sm text-gray-400">No stock transfers received yet</p>
+                      <p className="text-sm text-gray-400">No stock sales received yet</p>
                     </td></tr>
                   ) : history.map((h, i) => (
                     <tr key={i} className={`hover:bg-gray-50 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}>
                       <td className="px-4 py-3">
-                        <span className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{h.transfer_reference}</span>
+                        <span className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{h.sell_reference}</span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{fmtDate(h.transfer_date)}</td>
+                      <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{fmtDate(h.sell_date)}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">{h.product_name}</td>
                       <td className="px-4 py-3 text-xs font-mono text-gray-600">{h.sku}</td>
                       <td className="px-4 py-3 text-sm font-semibold text-green-700">+{h.quantity_received}</td>
@@ -318,8 +318,8 @@ export function StoreInventory() {
         <div>
           <p className="text-sm font-medium text-blue-800">Need more stock?</p>
           <p className="text-xs text-blue-600 mt-0.5">
-            You cannot create stock directly. Contact your system admin to arrange a warehouse-to-store transfer.
-            They can transfer products from the central warehouse to your store.
+            You cannot create stock directly. Contact your system admin to arrange a warehouse-to-store sale.
+            They can sell products from the central warehouse to your store.
           </p>
           <Link to="/" className="text-xs text-blue-700 font-medium hover:underline mt-1 inline-block">
             Go to Dashboard →
