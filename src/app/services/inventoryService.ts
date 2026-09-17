@@ -406,8 +406,15 @@ function normalizeProductCreate(data: Record<string, unknown>): ProductCreatePay
     sku: String(data.sku ?? "").trim(),
     name: String(data.name ?? "").trim(),
     category: (data.category as string) || undefined,
+    subCategory: (data.subCategory as string) || (data.sub_category as string) || undefined,
     brand: (data.brand as string) || undefined,
     model: (data.model as string) || undefined,
+    supplierId:
+      data.supplierId != null && data.supplierId !== ""
+        ? Number(data.supplierId)
+        : data.supplier_id != null && data.supplier_id !== ""
+          ? Number(data.supplier_id)
+          : undefined,
     unit: (data.unit as string) || undefined,
     costPrice: Number(data.costPrice ?? data.cost_price ?? 0),
     sellingPrice: Number(data.sellingPrice ?? data.selling_price ?? 0),

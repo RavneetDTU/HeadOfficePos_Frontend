@@ -174,7 +174,7 @@ export function ProductDetailPage() {
                 )
               }
             >
-              {unavailable ? "Request / Backorder" : "Add to Order"}
+              {unavailable ? "Request (out of stock)" : "Add to Order"}
             </Button>
           </div>
         </div>

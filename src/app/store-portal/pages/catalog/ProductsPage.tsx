@@ -3,7 +3,9 @@ import { Search } from "lucide-react";
 import {
   fetchBrands,
   fetchCategories,
+  fetchModels,
   fetchProducts,
+  fetchSubcategories,
   productCardImage,
 } from "@/app/store-portal/api/products";
 import type { CatalogFacet, Product } from "@/app/store-portal/types";
@@ -27,24 +29,30 @@ export function ProductsPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [subCategory, setSubCategory] = useState("");
   const [brand, setBrand] = useState("");
+  const [model, setModel] = useState("");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<CatalogFacet[]>([]);
+  const [subcategories, setSubcategories] = useState<CatalogFacet[]>([]);
   const [brands, setBrands] = useState<CatalogFacet[]>([]);
+  const [models, setModels] = useState<CatalogFacet[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
 
   const debouncedSearch = useDebouncedValue(search, 400);
 
   useEffect(() => {
     fetchCategories().then(setCategories);
+    fetchSubcategories().then(setSubcategories);
     fetchBrands().then(setBrands);
+    fetchModels().then(setModels);
   }, []);
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, category, brand]);
+  }, [debouncedSearch, category, subCategory, brand, model]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +63,9 @@ export function ProductsPage() {
       limit: PAGE_SIZE,
       search: debouncedSearch.trim() || undefined,
       category: category || undefined,
+      subCategory: subCategory || undefined,
       brand: brand || undefined,
+      model: model || undefined,
     })
       .then((res) => {
         if (cancelled) return;
@@ -68,7 +78,9 @@ export function ProductsPage() {
             limit: PAGE_SIZE,
             search: debouncedSearch.trim() || undefined,
             category: category || undefined,
+            subCategory: subCategory || undefined,
             brand: brand || undefined,
+            model: model || undefined,
           });
         }
       })
@@ -81,7 +93,7 @@ export function ProductsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, debouncedSearch, category, brand, reloadKey]);
+  }, [page, debouncedSearch, category, subCategory, brand, model, reloadKey]);
 
   return (
     <div>
@@ -102,7 +114,7 @@ export function ProductsPage() {
             className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
           />
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -110,6 +122,18 @@ export function ProductsPage() {
           >
             <option value="">All categories</option>
             {categories.map((c) => (
+              <option key={c.id} value={c.name}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={subCategory}
+            onChange={(e) => setSubCategory(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          >
+            <option value="">All sub-categories</option>
+            {subcategories.map((c) => (
               <option key={c.id} value={c.name}>
                 {c.name}
               </option>
@@ -124,6 +148,18 @@ export function ProductsPage() {
             {brands.map((b) => (
               <option key={b.id} value={b.name}>
                 {b.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          >
+            <option value="">All models</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.name}>
+                {m.name}
               </option>
             ))}
           </select>

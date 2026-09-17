@@ -1,26 +1,38 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import { toast } from "sonner";
 import {
   approveOrder,
   cancelOrder,
+  canPrintInvoice,
+  createBackorder,
   dispatchOrder,
   fetchOrder,
+  formatOrderStatus,
+  hasServerInvoice,
   invoiceOrder,
+  normalizeOrderStatus,
   orderStatusTone,
+  printInvoiceFromApi,
   rejectOrder,
+  removeOrderItems,
   updateOrder,
 } from "@/app/store-portal/api/orders";
-import type { BranchOrder } from "@/app/store-portal/types";
 import {
-  Badge,
   BackendBanner,
+  Badge,
   Button,
   Card,
   ErrorState,
   Skeleton,
 } from "@/app/store-portal/components/ui/primitives";
 import { fmtZAR } from "@/app/store-portal/lib/utils";
+import type { BranchOrder } from "@/app/store-portal/types";
+import { Printer } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router";
+import { toast } from "sonner";
+
+function lineKey(sku: string, idx: number) {
+  return `${sku}-${idx}`;
+}
 
 export function OrderDetailPage() {
   const { id } = useParams();
@@ -31,6 +43,23 @@ export function OrderDetailPage() {
   const [busy, setBusy] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editQty, setEditQty] = useState<Record<string, number>>({});
+  const [backorderQty, setBackorderQty] = useState<Record<string, number>>({});
+  const [removeQty, setRemoveQty] = useState<Record<string, number>>({});
+
+  const seedLineState = (o: BranchOrder) => {
+    const q: Record<string, number> = {};
+    const b: Record<string, number> = {};
+    const r: Record<string, number> = {};
+    o.items.forEach((i, idx) => {
+      const key = lineKey(i.sku, idx);
+      q[key] = i.quantity;
+      b[key] = 0;
+      r[key] = 0;
+    });
+    setEditQty(q);
+    setBackorderQty(b);
+    setRemoveQty(r);
+  };
 
   const load = () => {
     const oid = Number(id);
@@ -43,11 +72,7 @@ export function OrderDetailPage() {
     fetchOrder(oid)
       .then((o) => {
         setOrder(o);
-        const q: Record<string, number> = {};
-        o.items.forEach((i, idx) => {
-          q[`${i.sku}-${idx}`] = i.quantity;
-        });
-        setEditQty(q);
+        seedLineState(o);
       })
       .catch((e) => {
         setApiMissing(true);
@@ -61,11 +86,21 @@ export function OrderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const onPrint = async () => {
+    if (!order) return;
+    try {
+      await printInvoiceFromApi(order.id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invoice is not available yet");
+    }
+  };
+
   const run = async (fn: () => Promise<BranchOrder>, ok: string) => {
     setBusy(true);
     try {
       const updated = await fn();
       setOrder(updated);
+      seedLineState(updated);
       toast.success(ok);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Action failed — check backend API");
@@ -82,15 +117,73 @@ export function OrderDetailPage() {
         items: order.items.map((item, idx) => ({
           productId: item.productId,
           sku: item.sku,
-          quantity: editQty[`${item.sku}-${idx}`] ?? item.quantity,
+          quantity: editQty[lineKey(item.sku, idx)] ?? item.quantity,
           unitPrice: item.unitPrice,
         })),
       });
       setOrder(updated);
+      seedLineState(updated);
       setEditMode(false);
       toast.success("Order updated");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed — needs PATCH /orders/{id}");
+      toast.error(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const splitBackorder = async () => {
+    if (!order) return;
+    const items = order.items
+      .map((item, idx) => {
+        const key = lineKey(item.sku, idx);
+        const move = Math.min(Math.max(0, backorderQty[key] ?? 0), editQty[key] ?? item.quantity);
+        return {
+          productId: item.productId,
+          sku: item.sku,
+          quantity: move,
+          unitPrice: item.unitPrice,
+        };
+      })
+      .filter((i) => i.quantity > 0);
+    if (!items.length) {
+      toast.error("Set backorder qty on items you cannot send now.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { original, backorder } = await createBackorder(order.id, items);
+      setOrder(original);
+      seedLineState(original);
+      toast.success(`Back order ${backorder.reference} created. This order is now partial.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not create back order");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeSelected = async () => {
+    if (!order) return;
+    const items = order.items
+      .map((item, idx) => {
+        const key = lineKey(item.sku, idx);
+        const qty = Math.min(Math.max(0, removeQty[key] ?? 0), item.quantity);
+        return { productId: item.productId, sku: item.sku, quantity: qty };
+      })
+      .filter((i) => i.quantity > 0);
+    if (!items.length) {
+      toast.error("Set remove qty on discontinued items.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await removeOrderItems(order.id, items, "Removed — no longer sold");
+      setOrder(updated);
+      seedLineState(updated);
+      toast.success("Items removed. Order is partial.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove items");
     } finally {
       setBusy(false);
     }
@@ -110,8 +203,16 @@ export function OrderDetailPage() {
     );
   }
 
-  const s = order.status.toUpperCase();
-  const canProcess = s === "PENDING" || s === "PROCESSING";
+  const s = normalizeOrderStatus(order.status);
+  const canEdit = ["PRE_ORDER", "ORDERED", "PARTIAL", "BACKORDER", "PROCESSING"].includes(s);
+  const canInvoice = ["ORDERED", "PARTIAL", "BACKORDER", "PROCESSING"].includes(s) && !hasServerInvoice(order);
+  const canDispatch = s === "INVOICED";
+  const showPrint = canPrintInvoice(order);
+  const backorderTotal = order.items.reduce(
+    (sum, item, idx) => sum + (backorderQty[lineKey(item.sku, idx)] ?? 0),
+    0
+  );
+  const removeTotal = order.items.reduce((sum, item, idx) => sum + (removeQty[lineKey(item.sku, idx)] ?? 0), 0);
 
   return (
     <div className="p-4 sm:p-6">
@@ -127,17 +228,19 @@ export function OrderDetailPage() {
         </Link>
       </div>
 
-      {apiMissing && (
-        <BackendBanner>
-          Approve / reject / invoice / dispatch failed to load. Check{" "}
-          <code className="text-xs">GET /orders/{"{id}"}</code>.
-        </BackendBanner>
-      )}
-
       <div className="flex flex-wrap gap-2 mb-4 items-center">
-        <Badge tone={orderStatusTone(order.status)}>{order.status}</Badge>
-        {order.saleReference && (
-          <span className="text-sm text-slate-500">Sale: {order.saleReference}</span>
+        <Badge tone={orderStatusTone(order.status)}>{formatOrderStatus(order.status)}</Badge>
+        {order.saleReference && <span className="text-sm text-slate-500">Sale: {order.saleReference}</span>}
+        {order.invoiceReference && <span className="text-sm text-slate-500">Invoice: {order.invoiceReference}</span>}
+        {order.backorderReference && order.backorderOrderId && (
+          <Link to={`/branch-orders/${order.backorderOrderId}`} className="text-sm text-teal-700 hover:underline">
+            Back order: {order.backorderReference}
+          </Link>
+        )}
+        {order.parentReference && order.parentOrderId && (
+          <Link to={`/branch-orders/${order.parentOrderId}`} className="text-sm text-teal-700 hover:underline">
+            From order: {order.parentReference}
+          </Link>
         )}
       </div>
 
@@ -148,7 +251,7 @@ export function OrderDetailPage() {
             {order.timeline.map((ev, i) => (
               <li key={`${ev.createdAt}-${i}`}>
                 <span className="font-medium text-slate-800">
-                  {ev.oldStatus ? `${ev.oldStatus} → ${ev.newStatus}` : ev.newStatus}
+                  {ev.oldStatus ? `${formatOrderStatus(ev.oldStatus)} → ${formatOrderStatus(ev.newStatus || "")}` : ev.newStatus}
                 </span>
                 {ev.changedBy ? ` · ${ev.changedBy}` : ""}
                 {ev.createdAt ? ` · ${new Date(ev.createdAt).toLocaleString()}` : ""}
@@ -160,22 +263,23 @@ export function OrderDetailPage() {
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {canProcess && (
+        {canEdit && (
           <>
-            <Button disabled={busy} onClick={() => run(() => approveOrder(order.id), "Approved")}>
-              Approve
-            </Button>
-            <Button
-              variant="danger"
-              disabled={busy}
-              onClick={() => run(() => rejectOrder(order.id), "Rejected")}
-            >
+            {(s === "PROCESSING") && (
+              <Button disabled={busy} onClick={() => run(() => approveOrder(order.id), "Approved")}>
+                Approve
+              </Button>
+            )}
+            <Button variant="danger" disabled={busy} onClick={() => run(() => rejectOrder(order.id), "Rejected")}>
               Reject
             </Button>
             <Button
               variant="secondary"
               disabled={busy}
-              onClick={() => setEditMode((v) => !v)}
+              onClick={() => {
+                if (editMode) seedLineState(order);
+                setEditMode((v) => !v);
+              }}
             >
               {editMode ? "Cancel edit" : "Edit order"}
             </Button>
@@ -184,52 +288,83 @@ export function OrderDetailPage() {
                 Save changes
               </Button>
             )}
+            <Button variant="secondary" disabled={busy || backorderTotal <= 0} onClick={splitBackorder}>
+              Create back order
+            </Button>
+            <Button variant="ghost" disabled={busy || removeTotal <= 0} onClick={removeSelected}>
+              Remove items
+            </Button>
           </>
         )}
-        {(s === "PENDING" || s === "PROCESSING" || s === "APPROVED") && (
-          <Button
-            disabled={busy}
-            onClick={() => run(() => invoiceOrder(order.id), "Converted to invoice")}
-          >
+        {canInvoice && (
+          <Button disabled={busy} onClick={() => run(() => invoiceOrder(order.id), "Invoice created — it now appears on the store order")}>
             Convert to Invoice
           </Button>
         )}
-        {(s === "INVOICED" || s === "PROCESSING") && (
-          <Button
-            disabled={busy}
-            onClick={() => run(() => dispatchOrder(order.id), "Dispatched")}
-          >
+        {canDispatch && (
+          <Button disabled={busy} onClick={() => run(() => dispatchOrder(order.id), "Dispatched")}>
             Dispatch
           </Button>
         )}
-        {canProcess && (
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={() => run(() => cancelOrder(order.id), "Cancelled")}
-          >
+        {showPrint && (
+          <Button variant="secondary" disabled={busy} onClick={() => void onPrint()}>
+            <Printer size={16} /> Print Invoice
+          </Button>
+        )}
+        {canEdit && (
+          <Button variant="ghost" disabled={busy} onClick={() => run(() => cancelOrder(order.id), "Cancelled")}>
             Cancel
           </Button>
         )}
       </div>
+
+      {canEdit && (
+        <p className="text-sm text-slate-500 mb-3">
+          Tick or set <span className="font-medium text-slate-700">Backorder qty</span> for items you cannot send
+          now (they become a new back order). Use <span className="font-medium text-slate-700">Remove qty</span> for
+          items you no longer sell. Remaining qty stays on this order to pack.
+        </p>
+      )}
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr>
+                {canEdit && <th className="px-4 py-3 w-10">Move</th>}
                 <th className="px-4 py-3">Product</th>
                 <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3 text-right">Qty</th>
+                {canEdit && <th className="px-4 py-3 text-right">Backorder qty</th>}
+                {canEdit && <th className="px-4 py-3 text-right">Remove qty</th>}
+                {canEdit && <th className="px-4 py-3 text-right">Send now</th>}
                 <th className="px-4 py-3 text-right">Price</th>
                 <th className="px-4 py-3 text-right">Subtotal</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {order.items.map((item, idx) => {
-                const key = `${item.sku}-${idx}`;
+                const key = lineKey(item.sku, idx);
+                const ordered = editQty[key] ?? item.quantity;
+                const move = Math.min(Math.max(0, backorderQty[key] ?? 0), ordered);
+                const drop = Math.min(Math.max(0, removeQty[key] ?? 0), ordered);
+                const sendNow = Math.max(0, ordered - move - drop);
+                const checked = move > 0 && move >= ordered;
                 return (
                   <tr key={key}>
+                    {canEdit && (
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={busy}
+                          aria-label={`Move ${item.productName} to back order`}
+                          onChange={(e) =>
+                            setBackorderQty((q) => ({ ...q, [key]: e.target.checked ? ordered : 0 }))
+                          }
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">{item.productName}</td>
                     <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
                     <td className="px-4 py-3 text-right">
@@ -238,17 +373,57 @@ export function OrderDetailPage() {
                           type="number"
                           min={0}
                           className="w-20 rounded border px-2 py-1 text-right ml-auto"
-                          value={editQty[key] ?? item.quantity}
-                          onChange={(e) =>
-                            setEditQty((q) => ({ ...q, [key]: Number(e.target.value) || 0 }))
-                          }
+                          value={ordered}
+                          onChange={(e) => {
+                            const next = Math.max(0, Number(e.target.value) || 0);
+                            setEditQty((q) => ({ ...q, [key]: next }));
+                            setBackorderQty((q) => ({ ...q, [key]: Math.min(q[key] ?? 0, next) }));
+                            setRemoveQty((q) => ({ ...q, [key]: Math.min(q[key] ?? 0, next) }));
+                          }}
                         />
                       ) : (
                         item.quantity
                       )}
                     </td>
+                    {canEdit && (
+                      <td className="px-4 py-3 text-right">
+                        <input
+                          type="number"
+                          min={0}
+                          max={ordered}
+                          className="w-20 rounded border px-2 py-1 text-right"
+                          value={move}
+                          disabled={busy}
+                          onChange={(e) =>
+                            setBackorderQty((q) => ({
+                              ...q,
+                              [key]: Math.min(ordered, Math.max(0, Number(e.target.value) || 0)),
+                            }))
+                          }
+                        />
+                      </td>
+                    )}
+                    {canEdit && (
+                      <td className="px-4 py-3 text-right">
+                        <input
+                          type="number"
+                          min={0}
+                          max={ordered}
+                          className="w-20 rounded border px-2 py-1 text-right"
+                          value={drop}
+                          disabled={busy}
+                          onChange={(e) =>
+                            setRemoveQty((q) => ({
+                              ...q,
+                              [key]: Math.min(ordered, Math.max(0, Number(e.target.value) || 0)),
+                            }))
+                          }
+                        />
+                      </td>
+                    )}
+                    {canEdit && <td className="px-4 py-3 text-right tabular-nums">{sendNow}</td>}
                     <td className="px-4 py-3 text-right">{fmtZAR(item.unitPrice)}</td>
-                    <td className="px-4 py-3 text-right">{fmtZAR(item.subtotal)}</td>
+                    <td className="px-4 py-3 text-right">{fmtZAR(sendNow * item.unitPrice)}</td>
                   </tr>
                 );
               })}
@@ -272,6 +447,32 @@ export function OrderDetailPage() {
           </div>
         </div>
       </Card>
+
+      {order.removedItems && order.removedItems.length > 0 && (
+        <Card className="overflow-hidden mt-4">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <h3 className="text-sm font-semibold">Removed items</h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Product</th>
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3 text-right">Qty</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {order.removedItems.map((item, idx) => (
+                <tr key={`rm-${item.sku}-${idx}`} className="text-slate-400 line-through">
+                  <td className="px-4 py-3">{item.productName}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
+                  <td className="px-4 py-3 text-right">{item.quantity}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
     </div>
   );
 }

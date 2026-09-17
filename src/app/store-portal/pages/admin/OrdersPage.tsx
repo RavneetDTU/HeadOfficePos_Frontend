@@ -1,18 +1,20 @@
-import { fetchOrders, orderItemCount, orderStatusTone } from "@/app/store-portal/api/orders";
+import { fetchOrders, formatOrderStatus, canPrintInvoice, ORDER_STATUS_FILTERS, orderItemCount, orderStatusTone, printInvoiceFromApi } from "@/app/store-portal/api/orders";
 import { fetchStores } from "@/app/store-portal/api/stores";
 import {
-  BackendBanner,
-  Badge,
-  Card,
-  EmptyState,
-  ErrorState,
-  PageHeader,
-  Skeleton,
+    BackendBanner,
+    Badge,
+    Card,
+    EmptyState,
+    ErrorState,
+    PageHeader,
+    Skeleton,
 } from "@/app/store-portal/components/ui/primitives";
 import { fmtZAR } from "@/app/store-portal/lib/utils";
 import type { BranchOrder, Store } from "@/app/store-portal/types";
+import { Printer } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { toast } from "sonner";
 
 export function OrdersPage() {
   const [orders, setOrders] = useState<BranchOrder[]>([]);
@@ -90,13 +92,11 @@ export function OrdersPage() {
           onChange={(e) => setStatus(e.target.value)}
         >
           <option value="">All statuses</option>
-          {["PENDING", "PROCESSING", "INVOICED", "DISPATCHED", "COMPLETED", "REJECTED", "CANCELLED"].map(
-            (s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            )
-          )}
+          {ORDER_STATUS_FILTERS.map((s) => (
+            <option key={s} value={s}>
+              {formatOrderStatus(s)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -119,6 +119,7 @@ export function OrdersPage() {
                   <th className="px-4 py-3">Total</th>
                   <th className="px-4 py-3">Created by</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Invoice</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -136,7 +137,25 @@ export function OrdersPage() {
                     <td className="px-4 py-3">{fmtZAR(o.total)}</td>
                     <td className="px-4 py-3">{o.createdBy || "—"}</td>
                     <td className="px-4 py-3">
-                      <Badge tone={orderStatusTone(o.status)}>{o.status}</Badge>
+                      <Badge tone={orderStatusTone(o.status)}>{formatOrderStatus(o.status)}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {canPrintInvoice(o) ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-teal-700 text-sm hover:underline"
+                          onClick={() =>
+                            printInvoiceFromApi(o.id).catch((e) =>
+                              toast.error(e instanceof Error ? e.message : "Invoice is not available yet")
+                            )
+                          }
+                        >
+                          <Printer size={14} />
+                          Print Invoice
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Not created</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Link to={`/branch-orders/${o.id}`} className="text-teal-700">

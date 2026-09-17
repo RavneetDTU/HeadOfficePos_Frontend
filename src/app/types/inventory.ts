@@ -647,8 +647,10 @@ export interface ProductCreatePayload {
   sku: string;
   name: string;
   category?: string | null;
+  subCategory?: string | null;
   brand?: string | null;
   model?: string | null;
+  supplierId?: number | null;
   unit?: string;
   costPrice?: number;
   sellingPrice?: number;

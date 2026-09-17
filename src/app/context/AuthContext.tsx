@@ -17,6 +17,8 @@ export interface User {
   storeId: number | null;
   storeName: string | null;
   created_at: string;
+  level?: number | null;
+  isActive?: boolean;
 }
 
 // ─── API response shapes ───────────────────────────────────────────────────────
@@ -44,6 +46,9 @@ interface UserResponse {
   storeName?: string | null;
   store_name?: string | null;
   created_at: string;
+  level?: number | null;
+  isActive?: boolean;
+  is_active?: boolean;
 }
 
 function isHeadOfficeLocation(name: string | null | undefined): boolean {
@@ -98,6 +103,8 @@ function toUser(u: UserResponse): User {
       ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
       : u.username.slice(0, 2).toUpperCase();
 
+  const raw = u as unknown as Record<string, unknown>;
+  const active = raw.isActive ?? raw.is_active;
   return {
     id: u.id,
     username: u.username,
@@ -105,10 +112,12 @@ function toUser(u: UserResponse): User {
     email: u.email,
     role: u.role,
     warehouse: u.warehouse,
-    storeId: parseStoreId(u as unknown as Record<string, unknown>),
-    storeName: parseStoreName(u as unknown as Record<string, unknown>),
+    storeId: parseStoreId(raw),
+    storeName: parseStoreName(raw),
     initials,
     created_at: u.created_at,
+    level: u.level != null ? Number(u.level) : null,
+    isActive: typeof active === "boolean" ? active : true,
   };
 }
 

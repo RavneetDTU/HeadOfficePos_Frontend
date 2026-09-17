@@ -8,44 +8,45 @@ import { CartProvider } from "./store-portal/context/CartContext";
 import { StoreLayout } from "./store-portal/layout/StoreLayout";
 
 // ─── HeadOffice POS Pages ─────────────────────────────────────────────────────
+import { AddPurchase } from "./pages/AddPurchase";
 import { AddSale } from "./pages/AddSale";
 import { AddSell } from "./pages/AddSell";
+import { AddBiller } from "./pages/billers/AddBiller";
+import { ListBillers } from "./pages/billers/ListBillers";
+import { AddCustomer } from "./pages/customers/AddCustomer";
+import { ListCustomers } from "./pages/customers/ListCustomers";
 import { ListProformas } from "./pages/ListProformas";
+import { ListPurchases } from "./pages/ListPurchases";
 import { ListQuotations } from "./pages/ListQuotations";
-import { ListStockRequests } from "./pages/ListStockRequests";
 import { ListSells } from "./pages/ListSells";
+import { ListStockRequests } from "./pages/ListStockRequests";
 import { LoginPage } from "./pages/LoginPage";
 import { AddProduct } from "./pages/products/AddProduct";
+import { AddProductByCSV } from "./pages/products/AddProductByCSV";
 import { ListProducts } from "./pages/products/ListProducts";
 import { UserManagement } from "./pages/settings/UserManagement";
 import { UserManagementSystem } from "./pages/settings/UserManagementSystem";
 import { WarehouseSettings } from "./pages/settings/WarehouseSettings";
 import { StoreDetailPage } from "./pages/StoreDetailPage";
-import { AddBiller } from "./pages/billers/AddBiller";
-import { ListBillers } from "./pages/billers/ListBillers";
-import { AddCustomer } from "./pages/customers/AddCustomer";
-import { ListCustomers } from "./pages/customers/ListCustomers";
 import { AddSupplier } from "./pages/suppliers/AddSupplier";
 import { ListSuppliers } from "./pages/suppliers/ListSuppliers";
-import { AddPurchase } from "./pages/AddPurchase";
-import { ListPurchases } from "./pages/ListPurchases";
 import { Unauthorized } from "./pages/Unauthorized";
 import { UpcomingFeature } from "./pages/UpcomingFeature";
 
 // ─── Store POS pages (merged from Store_pos) ──────────────────────────────────
-import { StoreDashboardPage } from "./store-portal/pages/store/StoreDashboardPage";
-import { ShopPage } from "./store-portal/pages/store/ShopPage";
-import { ProductDetailPage } from "./store-portal/pages/store/ProductDetailPage";
-import { CartPage } from "./store-portal/pages/store/CartPage";
-import { InventoryPage } from "./store-portal/pages/store/InventoryPage";
-import { IncomingPage } from "./store-portal/pages/store/IncomingPage";
-import { OrdersPage as StoreOrdersPage } from "./store-portal/pages/store/OrdersPage";
-import { OrderDetailPage as StoreOrderDetailPage } from "./store-portal/pages/store/OrderDetailPage";
-import { ProfilePage } from "./store-portal/pages/store/ProfilePage";
-import { OrdersPage as BranchOrdersPage } from "./store-portal/pages/admin/OrdersPage";
 import { OrderDetailPage as BranchOrderDetailPage } from "./store-portal/pages/admin/OrderDetailPage";
-import { ProductsPage as CatalogProductsPage } from "./store-portal/pages/catalog/ProductsPage";
+import { OrdersPage as BranchOrdersPage } from "./store-portal/pages/admin/OrdersPage";
 import { AdminProductDetailPage as CatalogProductDetailPage } from "./store-portal/pages/catalog/ProductDetailPage";
+import { ProductsPage as CatalogProductsPage } from "./store-portal/pages/catalog/ProductsPage";
+import { CartPage } from "./store-portal/pages/store/CartPage";
+import { IncomingPage } from "./store-portal/pages/store/IncomingPage";
+import { InventoryPage } from "./store-portal/pages/store/InventoryPage";
+import { OrderDetailPage as StoreOrderDetailPage } from "./store-portal/pages/store/OrderDetailPage";
+import { OrdersPage as StoreOrdersPage } from "./store-portal/pages/store/OrdersPage";
+import { ProductDetailPage } from "./store-portal/pages/store/ProductDetailPage";
+import { ProfilePage } from "./store-portal/pages/store/ProfilePage";
+import { ShopPage } from "./store-portal/pages/store/ShopPage";
+import { StoreDashboardPage } from "./store-portal/pages/store/StoreDashboardPage";
 
 function BootSpinner() {
   return (
@@ -140,6 +141,7 @@ export default function App() {
 
             <Route path="/products" element={<ListProducts />} />
             <Route path="/products/add" element={<AddProduct />} />
+            <Route path="/products/add-csv" element={<AddProductByCSV />} />
             <Route path="/catalog" element={<CatalogShell />}>
               <Route index element={<CatalogProductsPage />} />
               <Route path=":sku" element={<CatalogProductDetailPage />} />

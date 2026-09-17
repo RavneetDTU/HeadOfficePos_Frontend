@@ -24,6 +24,8 @@ export interface ProductQuery {
   search?: string;
   category?: string;
   brand?: string;
+  model?: string;
+  subCategory?: string;
   status?: string;
   sort?: string;
   inStock?: boolean;
@@ -105,7 +107,9 @@ export function mapProduct(raw: Record<string, unknown>): Product {
     sku: String(raw.sku ?? raw.productSku ?? ""),
     name: String(raw.name ?? raw.productName ?? ""),
     category: (raw.category as string) ?? null,
+    subCategory: (raw.subCategory ?? raw.sub_category) as string | null | undefined,
     brand: (raw.brand as string) ?? null,
+    model: (raw.model as string) ?? null,
     unit: (raw.unit as string) ?? "Unit",
     costPrice: Number(raw.costPrice ?? raw.cost_price ?? 0),
     sellingPrice: Number(raw.sellingPrice ?? raw.selling_price ?? 0),
@@ -169,6 +173,8 @@ function toQuery(params: ProductQuery) {
     search: params.search,
     category: params.category,
     brand: params.brand,
+    model: params.model,
+    subCategory: params.subCategory,
     status: params.status,
     sort: params.sort,
     inStock: params.inStock,
@@ -222,6 +228,13 @@ function matchesQuery(product: Product, params: ProductQuery): boolean {
     return false;
   }
   if (params.brand && (product.brand ?? "").toLowerCase() !== params.brand.toLowerCase()) return false;
+  if (params.model && (product.model ?? "").toLowerCase() !== params.model.toLowerCase()) return false;
+  if (
+    params.subCategory &&
+    (product.subCategory ?? "").toLowerCase() !== params.subCategory.toLowerCase()
+  ) {
+    return false;
+  }
   if (params.inStock && (product.availableQty ?? 0) <= 0) return false;
   if (params.search) {
     const q = params.search.toLowerCase();
@@ -331,6 +344,22 @@ export async function fetchCategories(): Promise<CatalogFacet[]> {
 export async function fetchBrands(): Promise<CatalogFacet[]> {
   try {
     return await fetchFacets("/brands");
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchModels(): Promise<CatalogFacet[]> {
+  try {
+    return await fetchFacets("/products/models");
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSubcategories(): Promise<CatalogFacet[]> {
+  try {
+    return await fetchFacets("/products/subcategories");
   } catch {
     return [];
   }

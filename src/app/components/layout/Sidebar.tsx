@@ -35,6 +35,7 @@ const navItems: NavItem[] = [
     children: [
       { label: "List Product", icon: <ListOrdered size={18} />, path: "/products" },
       { label: "Add Product", icon: <PlusCircle size={18} />, path: "/products/add" },
+      { label: "Add Product by CSV", icon: <PlusCircle size={18} />, path: "/products/add-csv" },
       { label: "Product Catalog", icon: <Package size={18} />, path: "/catalog" },
     ],
   },

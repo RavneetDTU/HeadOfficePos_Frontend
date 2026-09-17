@@ -29,7 +29,9 @@ export interface Product {
   sku: string;
   name: string;
   category?: string | null;
+  subCategory?: string | null;
   brand?: string | null;
+  model?: string | null;
   unit?: string;
   costPrice: number;
   sellingPrice: number;
@@ -101,16 +103,22 @@ export interface StockLine {
 }
 
 export type BranchOrderStatus =
-  | "PENDING"
+  | "PRE_ORDER"
+  | "ORDERED"
   | "PROCESSING"
+  | "PARTIAL"
+  | "BACKORDER"
   | "INVOICED"
   | "DISPATCHED"
+  | "RECEIVED"
+  | "PARTIALLY_RECEIVED"
   | "COMPLETED"
   | "REJECTED"
   | "CANCELLED"
   | string;
 
 export interface BranchOrderItem {
+  id?: number;
   productId?: number;
   productName: string;
   sku: string;
@@ -120,6 +128,9 @@ export interface BranchOrderItem {
   tax?: number;
   isBackorder?: boolean;
   imageUrl?: string | null;
+  dispatchedQty?: number;
+  receivedQty?: number | null;
+  removed?: boolean;
 }
 
 export interface OrderTimelineEvent {
@@ -151,9 +162,17 @@ export interface BranchOrder {
   saleReference?: string | null;
   source?: "order" | "transfer" | "purchase";
   fromWarehouse?: string | null;
+  parentOrderId?: number | null;
+  parentReference?: string | null;
+  backorderOrderId?: number | null;
+  backorderReference?: string | null;
+  invoiceId?: number | null;
+  invoiceReference?: string | null;
+  removedItems?: BranchOrderItem[];
 }
 
 export interface CartLine {
+  cartItemId?: number;
   productId: number;
   sku: string;
   name: string;
@@ -161,7 +180,7 @@ export interface CartLine {
   unitCost: number;
   availableQty: number;
   qty: number;
-  /** True when ordering with availableQty === 0 (request / backorder) */
+  /** True when HO available qty is 0. This is not a Lauren back-order status. */
   isBackorder?: boolean;
   taxPercent?: number;
 }

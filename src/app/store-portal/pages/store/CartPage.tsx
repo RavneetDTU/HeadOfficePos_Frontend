@@ -12,6 +12,7 @@ import {
   Card,
   EmptyState,
   PageHeader,
+  Skeleton,
 } from "@/app/store-portal/components/ui/primitives";
 import { fmtZAR } from "@/app/store-portal/lib/utils";
 
@@ -22,7 +23,7 @@ function isHeadOffice(name: string) {
 
 export function CartPage() {
   const { user } = useAuth();
-  const { lines, setQty, remove, clear, totalAmount, totalUnits } = useCart();
+  const { lines, loading, setQty, remove, clear, totalAmount, totalUnits } = useCart();
   const navigate = useNavigate();
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +75,7 @@ export function CartPage() {
         })),
       });
 
-      clear();
+      await clear();
       toast.success(`Order placed — ${order.reference}`);
       const src = order.source && order.source !== "order" ? `?src=${order.source}` : "";
       navigate(`/store/orders/${order.id}${src}`);
@@ -97,7 +98,9 @@ export function CartPage() {
         }
       />
 
-      {lines.length === 0 ? (
+      {loading && lines.length === 0 ? (
+        <Skeleton className="h-64" />
+      ) : lines.length === 0 ? (
         <EmptyState title="Cart is empty" description="Browse the shop to add products." />
       ) : (
         <form onSubmit={onPlaceOrder} className="grid lg:grid-cols-3 gap-6">
@@ -129,7 +132,7 @@ export function CartPage() {
                             <p className="font-medium text-slate-900">{l.name}</p>
                             <p className="text-xs font-mono text-slate-500">{l.sku}</p>
                             {l.isBackorder && (
-                              <span className="text-[11px] text-amber-700">Backorder / request</span>
+                              <span className="text-[11px] text-amber-700">Out of stock at Head Office</span>
                             )}
                           </div>
                         </div>
@@ -188,7 +191,7 @@ export function CartPage() {
               />
             </div>
             <p className="text-xs text-slate-500">
-              Place Order saves the order under My Orders. Use Print Invoice on the order to open it.
+              Place Order saves a Pre-order. Head Office creates the invoice later — it then shows on My Orders.
             </p>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? <Loader2 className="animate-spin" size={16} /> : null}

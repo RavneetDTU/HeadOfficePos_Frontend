@@ -1,4 +1,5 @@
 import { apiFetch, buildQuery } from "@/app/lib/api";
+import { normalizeOrderStatus } from "@/app/store-portal/api/orders";
 
 export interface StoreDashboard {
   currentInventory: number;
@@ -54,7 +55,7 @@ export async function fetchStoreDashboard(): Promise<StoreDashboard> {
       return {
         id: num(o.id),
         reference: String(o.reference ?? `ORD-${o.id ?? "?"}`),
-        status: String(o.status ?? "PENDING"),
+        status: normalizeOrderStatus(o.status ?? "PRE_ORDER"),
         total: num(o.total),
         createdAt: (o.createdAt ?? o.created_at) as string | undefined,
       };

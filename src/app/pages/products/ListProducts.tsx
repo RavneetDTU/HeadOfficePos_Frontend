@@ -14,18 +14,18 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { SearchAutosuggest } from "../../components/ui/SearchAutosuggest";
 import { ProductLabelModal } from "../../components/products/ProductLabelModal";
+import { SearchAutosuggest } from "../../components/ui/SearchAutosuggest";
 import { useAuth } from "../../context/AuthContext";
-import { resolveMediaUrl } from "../../store-portal/lib/media";
 import {
-  getProducts,
-  getSalesStock,
-  getStoreInventory,
-  getStores,
-  getWarehouseInventory,
-  getWarehouses,
+    getProducts,
+    getSalesStock,
+    getStoreInventory,
+    getStores,
+    getWarehouseInventory,
+    getWarehouses,
 } from "../../services/inventoryService";
+import { resolveMediaUrl } from "../../store-portal/lib/media";
 
 interface ProductEntry {
   id: number;
@@ -450,13 +450,21 @@ export function ListProducts() {
             <Download size={15} /> Export
           </button>
           {isAdmin && (
-            <Link
-              to="/products/add"
-              id="go-to-add-product"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            >
-              <Package size={15} /> Add Product
-            </Link>
+            <>
+              <Link
+                to="/products/add-csv"
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 transition-colors text-sm text-gray-600"
+              >
+                Add by CSV
+              </Link>
+              <Link
+                to="/products/add"
+                id="go-to-add-product"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                <Package size={15} /> Add Product
+              </Link>
+            </>
           )}
         </div>
       </div>

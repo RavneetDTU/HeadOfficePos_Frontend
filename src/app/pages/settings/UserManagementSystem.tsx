@@ -21,6 +21,11 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useAuth, type User } from "../../context/AuthContext";
+import {
+  fetchPermissionGuidelines,
+  savePermissionGuidelines,
+  updateUserLevel,
+} from "../../store-portal/api/settings";
 
 // ─── LocalStorage Keys ────────────────────────────────────────────────────────
 const METADATA_KEY = "hal_pos_users_system_metadata";
@@ -135,7 +140,7 @@ const LEVEL_CONFIG = {
 };
 
 export function UserManagementSystem() {
-  const { fetchUsers, register, user: currentUser } = useAuth();
+  const { fetchUsers, register, user: currentUser, updateUserStatus, deleteUser } = useAuth();
 
   // ── States ──────────────────────────────────────────────────────────────────
   const [users, setUsers] = useState<User[]>([]);
@@ -172,6 +177,9 @@ export function UserManagementSystem() {
 
   // Current user's Level is derived: admin role = Level 1, otherwise retrieved from metadata
   const currentUserLevel: UserLevel = useMemo(() => {
+    if (currentUser?.level === 1 || currentUser?.level === 2 || currentUser?.level === 3 || currentUser?.level === 4) {
+      return currentUser.level;
+    }
     if (currentUser?.role === "admin") return 1;
     if (currentUser && metadataMap[currentUser.id]) {
       return metadataMap[currentUser.id].level;
@@ -189,32 +197,48 @@ export function UserManagementSystem() {
       const data = await fetchUsers();
       setUsers(data);
 
-      // Load Metadata from localStorage
       const storedMetadata = localStorage.getItem(METADATA_KEY);
       const metadata = storedMetadata ? JSON.parse(storedMetadata) : {};
 
-      // Load Deleted Users
       const storedDeleted = localStorage.getItem(DELETED_USERS_KEY);
       const deletedIds = storedDeleted ? JSON.parse(storedDeleted) : [];
       setDeletedUserIds(deletedIds);
 
-      // Load Guidelines
+      const remoteGuidelines = await fetchPermissionGuidelines();
       const storedGuidelines = localStorage.getItem(GUIDELINES_KEY);
-      const guidelinesData = storedGuidelines ? JSON.parse(storedGuidelines) : DEFAULT_GUIDELINES;
+      const guidelinesData = remoteGuidelines
+        ?? (storedGuidelines ? JSON.parse(storedGuidelines) : DEFAULT_GUIDELINES);
       setGuidelines(guidelinesData);
       setEditedGuidelines(guidelinesData);
+      if (remoteGuidelines) {
+        try {
+          localStorage.setItem(GUIDELINES_KEY, JSON.stringify(remoteGuidelines));
+        } catch {
+          /* ignore */
+        }
+      }
 
-      // Check for missing metadata and set defaults
       const updatedMetadata = { ...metadata };
       let updated = false;
 
       data.forEach((u) => {
+        const apiLevel =
+          u.level === 1 || u.level === 2 || u.level === 3 || u.level === 4
+            ? (u.level as UserLevel)
+            : u.role === "admin"
+              ? 1
+              : 2;
+        const apiStatus: UserStatus = u.isActive === false ? "Inactive" : "Active";
         if (!updatedMetadata[u.id]) {
-          updatedMetadata[u.id] = {
-            level: u.role === "admin" ? 1 : 2,
-            status: "Active"
-          };
+          updatedMetadata[u.id] = { level: apiLevel, status: apiStatus };
           updated = true;
+        } else {
+          if (u.level === 1 || u.level === 2 || u.level === 3 || u.level === 4) {
+            updatedMetadata[u.id].level = u.level as UserLevel;
+          }
+          if (typeof u.isActive === "boolean") {
+            updatedMetadata[u.id].status = apiStatus;
+          }
         }
       });
 
@@ -246,7 +270,7 @@ export function UserManagementSystem() {
   };
 
   // ── Admin Actions ───────────────────────────────────────────────────────────
-  const handleToggleStatus = (userId: number) => {
+  const handleToggleStatus = async (userId: number) => {
     if (!isAdmin) return;
     if (userId === currentUser?.id) {
       showToastMsg("error", "You cannot deactivate your own account.");
@@ -254,20 +278,27 @@ export function UserManagementSystem() {
     }
     const currentMeta = metadataMap[userId];
     const newStatus: UserStatus = currentMeta.status === "Active" ? "Inactive" : "Active";
+    const result = await updateUserStatus(userId, newStatus === "Active");
     const updated = {
       ...metadataMap,
       [userId]: { ...currentMeta, status: newStatus }
     };
     saveMetadata(updated);
-    showToastMsg("success", `User status updated to ${newStatus}.`);
+    showToastMsg(
+      result.success ? "success" : "error",
+      result.success
+        ? `User status updated to ${newStatus}.`
+        : `Saved locally. Server: ${result.error ?? "status API unavailable"}.`
+    );
   };
 
-  const handleChangeLevel = (userId: number, newLevel: UserLevel) => {
+  const handleChangeLevel = async (userId: number, newLevel: UserLevel) => {
     if (!isAdmin) return;
     if (userId === currentUser?.id) {
       showToastMsg("error", "You cannot change your own user level.");
       return;
     }
+    const result = await updateUserLevel(userId, newLevel);
     const currentMeta = metadataMap[userId];
     const updated = {
       ...metadataMap,
@@ -275,20 +306,31 @@ export function UserManagementSystem() {
     };
     saveMetadata(updated);
     setShowLevelModal(null);
-    showToastMsg("success", `User level updated to Level ${newLevel}.`);
+    showToastMsg(
+      result.success ? "success" : "error",
+      result.success
+        ? `User level updated to Level ${newLevel}.`
+        : `Saved locally. Server: ${result.error ?? "level API unavailable"}.`
+    );
   };
 
-  const handleDeleteUser = (userId: number, username: string) => {
+  const handleDeleteUser = async (userId: number, username: string) => {
     if (!isAdmin) return;
     if (userId === currentUser?.id) {
       showToastMsg("error", "You cannot delete your own account.");
       return;
     }
     if (window.confirm(`Are you sure you want to delete user "${username}" from the system?`)) {
+      const result = await deleteUser(userId);
+      if (result.success) {
+        setUsers((list) => list.filter((u) => u.id !== userId));
+        showToastMsg("success", `User ${username} deleted successfully.`);
+        return;
+      }
       const updatedDeleted = [...deletedUserIds, userId];
       setDeletedUserIds(updatedDeleted);
       localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(updatedDeleted));
-      showToastMsg("success", `User ${username} deleted successfully.`);
+      showToastMsg("success", `User ${username} hidden locally. Server: ${result.error ?? "delete failed"}.`);
     }
   };
 
@@ -321,6 +363,7 @@ export function UserManagementSystem() {
         // Find the new user and assign level
         const newUser = data.find(u => u.email === email.trim());
         if (newUser) {
+          await updateUserLevel(newUser.id, selectedLevel);
           const updated = {
             ...metadataMap,
             [newUser.id]: {
@@ -350,11 +393,21 @@ export function UserManagementSystem() {
   };
 
   // Guidelines Save
-  const handleSaveGuidelines = () => {
+  const handleSaveGuidelines = async () => {
+    const saved = await savePermissionGuidelines(editedGuidelines);
     setGuidelines(editedGuidelines);
-    localStorage.setItem(GUIDELINES_KEY, JSON.stringify(editedGuidelines));
+    try {
+      localStorage.setItem(GUIDELINES_KEY, JSON.stringify(editedGuidelines));
+    } catch {
+      /* ignore */
+    }
     setIsEditingGuidelines(false);
-    showToastMsg("success", "Roles & Permissions guidelines saved successfully.");
+    showToastMsg(
+      saved ? "success" : "error",
+      saved
+        ? "Roles & Permissions guidelines saved successfully."
+        : "Saved locally; server guidelines API is unavailable."
+    );
   };
 
   // ── Data Computations ────────────────────────────────────────────────────────
@@ -362,11 +415,18 @@ export function UserManagementSystem() {
     return users
       .filter(u => !deletedUserIds.includes(u.id))
       .map(u => {
-        const meta = metadataMap[u.id] || { level: u.role === "admin" ? 1 : 2, status: "Active" as UserStatus };
+        const apiLevel =
+          u.level === 1 || u.level === 2 || u.level === 3 || u.level === 4
+            ? (u.level as UserLevel)
+            : undefined;
+        const meta = metadataMap[u.id] || {
+          level: apiLevel ?? (u.role === "admin" ? 1 : 2),
+          status: (u.isActive === false ? "Inactive" : "Active") as UserStatus,
+        };
         return {
           ...u,
-          level: meta.level,
-          status: meta.status
+          level: apiLevel ?? meta.level,
+          status: typeof u.isActive === "boolean" ? (u.isActive ? "Active" : "Inactive") : meta.status
         };
       });
   }, [users, metadataMap, deletedUserIds]);

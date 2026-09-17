@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { fetchProductAvailability } from "@/app/store-portal/api/inventory";
-import { fetchOrders, orderItemCount, orderStatusTone } from "@/app/store-portal/api/orders";
+import { fetchOrders, formatOrderStatus, isPreOrderStatus, normalizeOrderStatus, orderItemCount, orderStatusTone } from "@/app/store-portal/api/orders";
 import { fetchStoreDashboard } from "@/app/store-portal/api/dashboard";
 import type { BranchOrder } from "@/app/store-portal/types";
 import { useAuth } from "@/app/context/AuthContext";
@@ -90,10 +90,9 @@ export function StoreDashboardPage() {
       total: orders.length,
     };
     for (const o of orders) {
-      const s = o.status.toUpperCase();
-      if (s === "PENDING") c.pending++;
-      else if (s === "DISPATCHED") c.dispatched++;
-      else if (s === "COMPLETED") c.completed++;
+      if (isPreOrderStatus(o.status)) c.pending++;
+      else if (normalizeOrderStatus(o.status) === "DISPATCHED") c.dispatched++;
+      else if (["COMPLETED", "RECEIVED"].includes(normalizeOrderStatus(o.status))) c.completed++;
     }
     return c;
   }, [orders]);
@@ -128,7 +127,7 @@ export function StoreDashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Kpi label="Available products" value={availableProducts} />
         <Kpi label="Orders placed" value={counts.total} />
-        <Kpi label="Pending" value={counts.pending} />
+        <Kpi label="Pre-order" value={counts.pending} />
         <Kpi label="Dispatched" value={counts.dispatched} />
         <Kpi label="Completed" value={counts.completed} />
         {inventoryValue != null && <Kpi label="Inventory value" value={fmtZAR(inventoryValue)} />}
@@ -170,7 +169,7 @@ export function StoreDashboardPage() {
                     <td className="px-4 py-3">{orderItemCount(o) || "—"}</td>
                     <td className="px-4 py-3">{fmtZAR(o.total)}</td>
                     <td className="px-4 py-3">
-                      <Badge tone={orderStatusTone(o.status)}>{o.status}</Badge>
+                      <Badge tone={orderStatusTone(o.status)}>{formatOrderStatus(o.status)}</Badge>
                     </td>
                   </tr>
                 ))}

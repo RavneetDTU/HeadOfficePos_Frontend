@@ -4,15 +4,25 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { CartLine } from "@/app/store-portal/types";
 import { useAuth } from "@/app/context/AuthContext";
 import { toast } from "sonner";
+import {
+  addCartItem,
+  deleteCartItem,
+  emptyCart,
+  fetchCart,
+  patchCartItem,
+  replaceCart,
+} from "@/app/store-portal/api/cart";
 
 interface CartState {
   lines: CartLine[];
+  loading: boolean;
   addItem: (line: Omit<CartLine, "qty">, qty?: number) => void;
   setQty: (sku: string, qty: number) => void;
   remove: (sku: string) => void;
@@ -40,101 +50,134 @@ function readStoredCart(userId: number): CartLine[] {
   }
 }
 
-function writeStoredCart(userId: number, lines: CartLine[]) {
+function clearStoredCart(userId: number) {
   try {
-    localStorage.setItem(cartStorageKey(userId), JSON.stringify(lines));
+    localStorage.removeItem(cartStorageKey(userId));
   } catch {
-    /* ignore quota */
+    /* ignore */
   }
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
-  const [lines, setLines] = useState<CartLine[]>(() =>
-    userId != null ? readStoredCart(userId) : []
-  );
+  const [lines, setLines] = useState<CartLine[]>([]);
+  const [loading, setLoading] = useState(false);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
 
   useEffect(() => {
     if (userId == null) {
       setLines([]);
       return;
     }
-    setLines(readStoredCart(userId));
+
+    let cancelled = false;
+    setLoading(true);
+
+    const load = async () => {
+      const local = readStoredCart(userId);
+      try {
+        let remote = await fetchCart();
+        if (local.length > 0 && remote.length === 0) {
+          remote = await replaceCart(local);
+        }
+        if (!cancelled) {
+          setLines(remote);
+          clearStoredCart(userId);
+        }
+      } catch {
+        if (!cancelled) setLines(local);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
-  const commit = useCallback(
-    (updater: (prev: CartLine[]) => CartLine[]) => {
-      setLines((prev) => {
-        const next = updater(prev);
-        if (userId != null) writeStoredCart(userId, next);
-        return next;
-      });
+  const addItem = useCallback(
+    async (item: Omit<CartLine, "qty">, qty = 1) => {
+      const isBackorder = item.isBackorder || item.availableQty <= 0;
+
+      if (!isBackorder && item.availableQty <= 0) {
+        toast.error("Out of stock — use Request if you still need this item.");
+        return;
+      }
+
+      try {
+        const next = await addCartItem({
+          productId: item.productId,
+          sku: item.sku,
+          quantity: qty,
+          isBackorder,
+        });
+        setLines(next);
+        if (userId != null) clearStoredCart(userId);
+        toast.success(isBackorder ? "Added (out of stock at Head Office)" : "Added to order");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Could not add to cart");
+      }
     },
     [userId]
   );
 
-  const addItem = (item: Omit<CartLine, "qty">, qty = 1) => {
-    const isBackorder = item.isBackorder || item.availableQty <= 0;
-
-    if (!isBackorder && item.availableQty <= 0) {
-      toast.error("Out of stock — use Request / Backorder if allowed.");
-      return;
+  const setQty = useCallback(async (sku: string, qty: number) => {
+    const line = linesRef.current.find((l) => l.sku === sku);
+    if (!line) return;
+    const max = line.isBackorder ? 9999 : line.availableQty;
+    if (!line.isBackorder && qty > line.availableQty) {
+      toast.error(`Only ${line.availableQty} units are currently available.`);
     }
-
-    let rejected = false;
-    commit((prev) => {
-      const existing = prev.find((l) => l.sku === item.sku);
-      const nextQty = (existing?.qty ?? 0) + qty;
-
-      if (!isBackorder && nextQty > item.availableQty) {
-        rejected = true;
-        return prev;
+    const q = Math.max(0, Math.min(max, Math.floor(qty)));
+    try {
+      if (line.cartItemId != null) {
+        const next =
+          q <= 0 ? await deleteCartItem(line.cartItemId) : await patchCartItem(line.cartItemId, { quantity: q });
+        setLines(next);
+      } else {
+        const draft = linesRef.current
+          .map((l) => (l.sku === sku ? { ...l, qty: q } : l))
+          .filter((l) => l.qty > 0);
+        setLines(await replaceCart(draft));
       }
-
-      const line: CartLine = {
-        ...item,
-        qty: nextQty,
-        isBackorder,
-        availableQty: item.availableQty,
-      };
-
-      if (existing) {
-        return prev.map((l) => (l.sku === item.sku ? { ...l, ...line } : l));
-      }
-      return [...prev, line];
-    });
-    if (rejected) {
-      toast.error(`Only ${item.availableQty} units are currently available.`);
-      return;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update cart");
     }
-    toast.success(isBackorder ? "Added as backorder request" : "Added to order");
-  };
+  }, []);
 
-  const setQty = (sku: string, qty: number) => {
-    commit((prev) =>
-      prev
-        .map((l) => {
-          if (l.sku !== sku) return l;
-          const max = l.isBackorder ? 9999 : l.availableQty;
-          const q = Math.max(0, Math.min(max, Math.floor(qty)));
-          if (!l.isBackorder && qty > l.availableQty) {
-            toast.error(`Only ${l.availableQty} units are currently available.`);
-          }
-          return { ...l, qty: q };
-        })
-        .filter((l) => l.qty > 0)
-    );
-  };
+  const remove = useCallback(async (sku: string) => {
+    const line = linesRef.current.find((l) => l.sku === sku);
+    if (!line) return;
+    try {
+      if (line.cartItemId != null) {
+        setLines(await deleteCartItem(line.cartItemId));
+      } else {
+        setLines(await replaceCart(linesRef.current.filter((l) => l.sku !== sku)));
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove item");
+    }
+  }, []);
 
-  const remove = (sku: string) => commit((prev) => prev.filter((l) => l.sku !== sku));
-  const clear = () => commit(() => []);
+  const clear = useCallback(async () => {
+    try {
+      await emptyCart();
+      setLines([]);
+      if (userId != null) clearStoredCart(userId);
+    } catch {
+      setLines([]);
+    }
+  }, [userId]);
 
   const value = useMemo(() => {
     const totalUnits = lines.reduce((a, l) => a + l.qty, 0);
     const totalAmount = lines.reduce((a, l) => a + l.qty * l.unitCost, 0);
-    return { lines, addItem, setQty, remove, clear, totalUnits, totalAmount };
-  }, [lines, commit]);
+    return { lines, loading, addItem, setQty, remove, clear, totalUnits, totalAmount };
+  }, [lines, loading, addItem, setQty, remove, clear]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

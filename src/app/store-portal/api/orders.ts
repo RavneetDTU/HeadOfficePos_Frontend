@@ -1,6 +1,7 @@
 import { ApiError, apiFetch, buildQuery } from "@/app/lib/api";
+import { printOrderInvoice } from "@/app/lib/printSellInvoice";
+import { fetchTransfer, mapTransfer } from "@/app/store-portal/api/transfers";
 import { resolveMediaUrl } from "@/app/store-portal/lib/media";
-import { fetchTransfer, fetchTransfers, mapTransfer } from "@/app/store-portal/api/transfers";
 import type { BranchOrder, BranchOrderItem, BranchOrderStatus } from "@/app/store-portal/types";
 
 function num(...vals: unknown[]) {
@@ -10,10 +11,76 @@ function num(...vals: unknown[]) {
   return 0;
 }
 
+/** Collapse API / UI aliases onto the meeting status enum. */
+export function orderStatusToken(status: unknown): string {
+  return String(status ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+export function normalizeOrderStatus(status: unknown): BranchOrderStatus {
+  const s = orderStatusToken(status);
+  if (
+    !s ||
+    s === "PENDING" ||
+    s === "PREORDER" ||
+    s === "PRE_ORDER" ||
+    s === "PREORDERED" ||
+    s === "PRE_ORDERED"
+  ) {
+    return "PRE_ORDER";
+  }
+  if (s === "BACKORDER" || s === "BACK_ORDER" || s === "BACKORDERED" || s === "BACK_ORDERED") {
+    return "BACKORDER";
+  }
+  if (s === "PARTIALLY_RECEIVED" || s === "PARTIAL_RECEIVED" || s === "PARTIALLYRECEIVED") {
+    return "PARTIALLY_RECEIVED";
+  }
+  return s;
+}
+
+export function isPreOrderStatus(status: unknown): boolean {
+  return normalizeOrderStatus(status) === "PRE_ORDER";
+}
+
+export function isBackOrderStatus(status: unknown): boolean {
+  return normalizeOrderStatus(status) === "BACKORDER";
+}
+
+export function statusesMatch(actual: unknown, filter: string | null | undefined): boolean {
+  const f = (filter ?? "").trim();
+  if (!f || f.toUpperCase() === "ALL") return true;
+  return normalizeOrderStatus(actual) === normalizeOrderStatus(f);
+}
+
+function statusQueryValues(status?: string): string[] | undefined {
+  if (!status) return undefined;
+  const n = normalizeOrderStatus(status);
+  if (n === "PRE_ORDER") return ["PRE_ORDER", "PENDING", "PREORDER", "PRE-ORDER"];
+  if (n === "BACKORDER") return ["BACKORDER", "BACK_ORDER", "BACK-ORDER"];
+  return [n];
+}
+
+function inferSplitStatus(
+  status: BranchOrderStatus,
+  parentOrderId: number | null,
+  backorderOrderId: number | null
+): BranchOrderStatus {
+  if (parentOrderId != null && (status === "PRE_ORDER" || status === "ORDERED" || status === "PROCESSING")) {
+    return "BACKORDER";
+  }
+  if (backorderOrderId != null && (status === "PRE_ORDER" || status === "ORDERED" || status === "PROCESSING")) {
+    return "PARTIAL";
+  }
+  return status;
+}
+
 function mapItem(raw: Record<string, unknown>): BranchOrderItem {
   const qty = num(raw.quantity, raw.qty);
   const unitPrice = num(raw.unitPrice, raw.unit_price, raw.unitCost, raw.unit_cost);
   return {
+    id: raw.id != null ? Number(raw.id) : undefined,
     productId: raw.productId != null ? Number(raw.productId) : raw.product_id != null ? Number(raw.product_id) : undefined,
     productName: String(raw.productName ?? raw.product_name ?? raw.name ?? ""),
     sku: String(raw.sku ?? ""),
@@ -23,6 +90,14 @@ function mapItem(raw: Record<string, unknown>): BranchOrderItem {
     tax: num(raw.tax),
     isBackorder: Boolean(raw.isBackorder ?? raw.is_backorder),
     imageUrl: resolveMediaUrl(raw.imageUrl, raw.image_url),
+    dispatchedQty: raw.dispatchedQty != null ? Number(raw.dispatchedQty) : raw.dispatched_qty != null ? Number(raw.dispatched_qty) : undefined,
+    receivedQty:
+      raw.receivedQty != null
+        ? Number(raw.receivedQty)
+        : raw.received_qty != null
+          ? Number(raw.received_qty)
+          : null,
+    removed: Boolean(raw.removed),
   };
 }
 
@@ -35,12 +110,21 @@ function mapOrder(raw: Record<string, unknown>): BranchOrder {
   );
   const tax = num(raw.tax, raw.taxTotal, raw.tax_total);
   const itemCountFromApi = num(raw.itemCount, raw.item_count, raw.totalItems, raw.total_items);
+  const parentOrderId =
+    raw.parentOrderId != null ? Number(raw.parentOrderId) : raw.parent_order_id != null ? Number(raw.parent_order_id) : null;
+  const backorderOrderId =
+    raw.backorderOrderId != null
+      ? Number(raw.backorderOrderId)
+      : raw.backorder_order_id != null
+        ? Number(raw.backorder_order_id)
+        : null;
+  const status = inferSplitStatus(normalizeOrderStatus(raw.status ?? "PRE_ORDER"), parentOrderId, backorderOrderId);
   return {
     id: Number(raw.id ?? 0),
     reference: String(raw.reference ?? raw.orderNumber ?? raw.order_number ?? `ORD-${raw.id ?? "?"}`),
     storeId: raw.storeId != null ? Number(raw.storeId) : raw.store_id != null ? Number(raw.store_id) : null,
     storeName: (raw.storeName ?? raw.store_name) as string | null | undefined,
-    status: String(raw.status ?? "PENDING").toUpperCase() as BranchOrderStatus,
+    status,
     orderType: (raw.orderType ?? raw.order_type) as string | undefined,
     createdAt: (raw.createdAt ?? raw.created_at ?? raw.date) as string | undefined,
     createdBy: (raw.createdBy ?? raw.created_by ?? raw.biller) as string | undefined,
@@ -63,6 +147,26 @@ function mapOrder(raw: Record<string, unknown>): BranchOrder {
     saleReference: (raw.saleReference ?? raw.sale_reference) as string | null | undefined,
     source: "order",
     fromWarehouse: (raw.warehouseName ?? raw.fromWarehouse ?? raw.from_warehouse) as string | null | undefined,
+    parentOrderId,
+    parentReference: (raw.parentReference ?? raw.parent_reference) as string | null | undefined,
+    backorderOrderId,
+    backorderReference: (raw.backorderReference ?? raw.backorder_reference) as string | null | undefined,
+    invoiceId:
+      raw.invoiceId != null
+        ? Number(raw.invoiceId)
+        : raw.invoice_id != null
+          ? Number(raw.invoice_id)
+          : null,
+    invoiceReference: (raw.invoiceReference ??
+      raw.invoice_reference ??
+      raw.invoiceNumber ??
+      raw.invoice_number ??
+      raw.invoiceNo) as string | null | undefined,
+    removedItems: Array.isArray(raw.removedItems)
+      ? (raw.removedItems as Record<string, unknown>[]).map(mapItem)
+      : Array.isArray(raw.removed_items)
+        ? (raw.removed_items as Record<string, unknown>[]).map(mapItem)
+        : undefined,
   };
 }
 
@@ -74,8 +178,6 @@ function unwrapList(raw: unknown): Record<string, unknown>[] {
   }
   return [];
 }
-
-const LOCAL_ORDERS_KEY = "hal_pos_store_orders";
 
 export type StoreOrderSource = "order" | "transfer" | "purchase";
 
@@ -94,28 +196,6 @@ export interface PlaceStoreOrderPayload {
     unitPrice: number;
     imageUrl?: string | null;
   }>;
-}
-
-function rememberLocalOrder(order: BranchOrder) {
-  try {
-    const raw = localStorage.getItem(LOCAL_ORDERS_KEY);
-    const list: BranchOrder[] = raw ? JSON.parse(raw) : [];
-    const next = [order, ...list.filter((o) => !(o.id === order.id && o.source === order.source))];
-    localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(next.slice(0, 80)));
-  } catch {
-    /* ignore quota */
-  }
-}
-
-function readLocalOrders(storeId?: number): BranchOrder[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_ORDERS_KEY);
-    const list: BranchOrder[] = raw ? JSON.parse(raw) : [];
-    if (storeId == null) return list;
-    return list.filter((o) => o.storeId == null || o.storeId === storeId);
-  } catch {
-    return [];
-  }
 }
 
 function mergeOrders(...lists: BranchOrder[][]): BranchOrder[] {
@@ -161,7 +241,7 @@ function orderFromItems(
     reference: base.reference,
     storeId: payload.storeId,
     storeName: payload.storeName,
-    status: status as BranchOrderStatus,
+    status: normalizeOrderStatus(status),
     createdAt: base.createdAt ?? new Date().toISOString(),
     createdBy: payload.createdBy,
     notes: payload.notes,
@@ -207,7 +287,7 @@ function orderFromTransfer(transfer: {
     reference: transfer.transferNumber,
     storeId: transfer.storeId ?? null,
     storeName: transfer.storeName,
-    status: String(transfer.status || "COMPLETED").toUpperCase() as BranchOrderStatus,
+    status: normalizeOrderStatus(transfer.status || "COMPLETED"),
     createdAt: transfer.createdAt,
     notes: transfer.remarks,
     subtotal,
@@ -238,7 +318,7 @@ function mapPurchaseRow(raw: Record<string, unknown>): BranchOrder {
     reference: String(raw.reference ?? `PO-${raw.id ?? "?"}`),
     storeId: raw.warehouseId != null ? Number(raw.warehouseId) : raw.storeId != null ? Number(raw.storeId) : null,
     storeName: (raw.warehouse ?? raw.warehouseName ?? raw.storeName) as string | null | undefined,
-    status: String(raw.purchaseStatus ?? raw.status ?? "ORDERED").toUpperCase() as BranchOrderStatus,
+    status: normalizeOrderStatus(raw.purchaseStatus ?? raw.status ?? "ORDERED"),
     createdAt: (raw.date ?? raw.createdAt ?? raw.created_at) as string | undefined,
     notes: (raw.notes as string) ?? undefined,
     subtotal,
@@ -256,6 +336,7 @@ async function postBranchOrder(payload: PlaceStoreOrderPayload): Promise<BranchO
     body: JSON.stringify({
       notes: payload.notes,
       storeId: payload.storeId,
+      status: "PRE_ORDER",
       items: payload.items.map((item) => ({
         productId: item.productId,
         sku: item.sku,
@@ -316,7 +397,7 @@ async function postStockRequestOrder(payload: PlaceStoreOrderPayload): Promise<B
     },
     payload,
     "purchase",
-    String(raw.status ?? "PENDING")
+    String(raw.status ?? "PRE_ORDER")
   );
 }
 
@@ -357,14 +438,10 @@ async function postPurchaseOrder(payload: PlaceStoreOrderPayload): Promise<Branc
  */
 export async function placeStoreOrder(payload: PlaceStoreOrderPayload): Promise<BranchOrder> {
   try {
-    const order = await postBranchOrder(payload);
-    rememberLocalOrder(order);
-    return order;
+    return await postBranchOrder(payload);
   } catch (orderErr) {
     try {
-      const order = await postStockRequestOrder(payload);
-      rememberLocalOrder(order);
-      return order;
+      return await postStockRequestOrder(payload);
     } catch {
       throw new Error(
         `${orderErr instanceof Error ? orderErr.message : String(orderErr)}. Ask an admin to set this account to store_manager (Users → Edit Role) so Place Order can use POST /orders.`
@@ -416,16 +493,29 @@ async function fetchOrdersFromApi(params: {
   page?: number;
   limit?: number;
 }): Promise<BranchOrder[]> {
-  const raw = await apiFetch<unknown>(
-    `/orders${buildQuery({
-      storeId: params.storeId,
-      status: params.status,
-      search: params.search,
-      page: params.page ?? 1,
-      limit: params.limit ?? 50,
-    })}`
+  const aliases = statusQueryValues(params.status);
+  const queries = aliases && aliases.length > 1 ? aliases : [params.status];
+  const lists = await Promise.all(
+    queries.map(async (status) => {
+      try {
+        const raw = await apiFetch<unknown>(
+          `/orders${buildQuery({
+            storeId: params.storeId,
+            status,
+            search: params.search,
+            page: params.page ?? 1,
+            limit: params.limit ?? 50,
+          })}`
+        );
+        return unwrapList(raw).map(mapOrder);
+      } catch {
+        return [] as BranchOrder[];
+      }
+    })
   );
-  return unwrapList(raw).map(mapOrder);
+  const merged = mergeOrders(...lists);
+  if (!params.status) return merged;
+  return merged.filter((o) => statusesMatch(o.status, params.status));
 }
 
 async function fetchStorePurchasesAsOrders(storeId?: number): Promise<BranchOrder[]> {
@@ -450,7 +540,7 @@ async function fetchStockRequestsAsOrders(storeId?: number): Promise<BranchOrder
       reference: String(row.requestNumber ?? row.request_number ?? `SR-${row.id ?? "?"}`),
       storeId: row.storeId != null ? Number(row.storeId) : row.store_id != null ? Number(row.store_id) : null,
       storeName: (row.storeName ?? row.store_name) as string | null | undefined,
-      status: String(row.status ?? "PENDING").toUpperCase() as BranchOrderStatus,
+      status: normalizeOrderStatus(row.status ?? "PRE_ORDER"),
       createdAt: (row.createdAt ?? row.created_at ?? row.requestDate) as string | undefined,
       createdBy: (row.requestedBy ?? row.requested_by ?? row.requestedByUsername) as string | undefined,
       notes: (row.remarks as string) ?? undefined,
@@ -495,23 +585,11 @@ export async function fetchStoreOrders(params: {
   page?: number;
   limit?: number;
 } = {}): Promise<BranchOrder[]> {
-  const settled = await Promise.allSettled([
-    fetchOrdersFromApi(params),
-    fetchStorePurchasesAsOrders(params.storeId),
-    fetchStockRequestsAsOrders(params.storeId),
-    fetchTransfers({ storeId: params.storeId, limit: params.limit ?? 100 }).then((res) =>
-      res.transfers.map(orderFromTransfer)
-    ),
-    fetchPurchasesAsOrders(params.storeId, params.storeName),
-  ]);
-  const lists = settled
-    .filter((r): r is PromiseFulfilledResult<BranchOrder[]> => r.status === "fulfilled")
-    .map((r) => r.value);
-  const merged = mergeOrders(...lists, readLocalOrders(params.storeId));
+  const orders = await fetchOrdersFromApi(params);
   const q = (params.search ?? "").trim().toLowerCase();
   const status = (params.status ?? "").trim().toUpperCase();
-  return merged.filter((o) => {
-    if (status && status !== "ALL" && String(o.status).toUpperCase() !== status) return false;
+  return orders.filter((o) => {
+    if (status && status !== "ALL" && !statusesMatch(o.status, status)) return false;
     if (!q) return true;
     return (
       o.reference.toLowerCase().includes(q) ||
@@ -525,37 +603,14 @@ export async function fetchOrder(
   id: number,
   source?: StoreOrderSource
 ): Promise<BranchOrder> {
-  const local = readLocalOrders().find((o) => o.id === id && (!source || o.source === source));
-
-  const tryOrder = async () => {
-    const raw = await apiFetch<Record<string, unknown>>(`/orders/${id}`);
-    return mapOrder(raw);
-  };
-  const tryTransfer = async () => {
+  if (source === "transfer") {
     const transfer = await fetchTransfer(id);
     return orderFromTransfer(transfer);
-  };
-
-  const attempts: Array<() => Promise<BranchOrder>> =
-    source === "transfer"
-      ? [tryTransfer, tryOrder]
-      : [tryOrder, tryTransfer];
-
-  let lastError: unknown;
-  for (const attempt of attempts) {
-    try {
-      const order = await attempt();
-      if (local?.items?.length && !order.items.length) order.items = local.items;
-      if (source) order.source = source;
-      return order;
-    } catch (err) {
-      lastError = err;
-    }
   }
-
-  if (local) return local;
-  if (lastError instanceof ApiError) throw lastError;
-  throw lastError instanceof Error ? lastError : new Error("Failed to load order");
+  const raw = await apiFetch<Record<string, unknown>>(`/orders/${id}`);
+  const order = mapOrder(raw);
+  if (source) order.source = source;
+  return order;
 }
 
 export async function updateOrder(
@@ -586,6 +641,175 @@ export const rejectOrder = (id: number, notes?: string) =>
 export const invoiceOrder = (id: number) => postAction(id, "invoice");
 export const dispatchOrder = (id: number) => postAction(id, "dispatch");
 export const cancelOrder = (id: number) => postAction(id, "cancel");
+export const markOrderOrdered = (id: number) => postAction(id, "ordered");
+
+export async function createBackorder(
+  id: number,
+  items: Array<{ productId?: number; sku: string; quantity: number; unitPrice?: number }>,
+  notes?: string
+): Promise<{ original: BranchOrder; backorder: BranchOrder }> {
+  const raw = await apiFetch<Record<string, unknown>>(`/orders/${id}/backorder`, {
+    method: "POST",
+    body: JSON.stringify({ items, notes }),
+  });
+  const originalRaw = (raw.original ?? raw.originalOrder ?? raw.parent) as Record<string, unknown> | undefined;
+  const nestedBackorder = (raw.backorder ?? raw.backorderOrder ?? raw.child) as Record<string, unknown> | undefined;
+
+  let original = originalRaw ? mapOrder(originalRaw) : await fetchOrder(id);
+  const nestedId = nestedBackorder?.id != null ? Number(nestedBackorder.id) : NaN;
+  let backorder =
+    nestedBackorder && Number.isFinite(nestedId) && nestedId !== original.id ? mapOrder(nestedBackorder) : null;
+
+  const childId =
+    original.backorderOrderId ??
+    (Number.isFinite(nestedId) && nestedId !== original.id ? nestedId : null) ??
+    (raw.backorderOrderId != null ? Number(raw.backorderOrderId) : null) ??
+    (raw.backorder_order_id != null ? Number(raw.backorder_order_id) : null);
+
+  if (!backorder && childId && childId !== original.id) {
+    backorder = await fetchOrder(childId);
+  }
+  if (!backorder) {
+    throw new Error("Back order was created but the new order was not returned.");
+  }
+
+  if (!isBackOrderStatus(backorder.status)) {
+    backorder = {
+      ...backorder,
+      status: "BACKORDER",
+      parentOrderId: backorder.parentOrderId ?? original.id,
+      parentReference: backorder.parentReference ?? original.reference,
+    };
+  }
+  if (original.status === "PRE_ORDER" || original.status === "ORDERED" || original.status === "PROCESSING") {
+    original = {
+      ...original,
+      status: "PARTIAL",
+      backorderOrderId: original.backorderOrderId ?? backorder.id,
+      backorderReference: original.backorderReference ?? backorder.reference,
+    };
+  }
+  return { original, backorder };
+}
+
+export async function removeOrderItems(
+  id: number,
+  items: Array<{ productId?: number; sku: string; quantity: number }>,
+  notes?: string
+): Promise<BranchOrder> {
+  const raw = await apiFetch<Record<string, unknown>>(`/orders/${id}/remove-items`, {
+    method: "POST",
+    body: JSON.stringify({ items, notes }),
+  });
+  return mapOrder(raw);
+}
+
+export async function receiveOrder(
+  id: number,
+  items: Array<{ sku: string; receivedQty: number }>
+): Promise<BranchOrder> {
+  const raw = await apiFetch<Record<string, unknown>>(`/orders/${id}/receive`, {
+    method: "POST",
+    body: JSON.stringify({ items }),
+  });
+  return mapOrder(raw);
+}
+
+export async function fetchOrderInvoiceData(id: number): Promise<Record<string, unknown> | null> {
+  try {
+    return await apiFetch<Record<string, unknown>>(`/orders/${id}/invoice-data`);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 409)) return null;
+    throw err;
+  }
+}
+
+/** True only after Head Office converts this order (or back order) to an invoice. */
+export function hasServerInvoice(order: {
+  status?: string;
+  invoiceId?: number | null;
+  invoiceReference?: string | null;
+  source?: string;
+}): boolean {
+  if (order.source && order.source !== "order") return false;
+  if (order.invoiceId != null && Number(order.invoiceId) > 0) return true;
+  if (String(order.invoiceReference ?? "").trim()) return true;
+  const s = normalizeOrderStatus(order.status);
+  return s === "INVOICED" || s === "DISPATCHED" || s === "RECEIVED" || s === "PARTIALLY_RECEIVED";
+}
+
+export function invoiceLabel(order: { invoiceReference?: string | null; reference?: string }): string {
+  return String(order.invoiceReference ?? "").trim() || order.reference || "Invoice";
+}
+
+function invoiceLinesFromApi(raw: Record<string, unknown>) {
+  const lines = raw.lines ?? raw.items ?? raw.invoiceLines ?? raw.invoice_lines;
+  if (!Array.isArray(lines) || lines.length === 0) return null;
+  return (lines as Record<string, unknown>[]).map((l) => ({
+    sku: String(l.sku ?? ""),
+    productName: String(l.name ?? l.productName ?? l.product_name ?? ""),
+    quantity: Number(l.qty ?? l.quantity ?? 0),
+    unitPrice: Number(l.unitPrice ?? l.unit_price ?? l.unitCost ?? l.unit_cost ?? 0),
+  }));
+}
+
+/** Print using the same sales invoice layout as List Sales. Never invents one in the browser. */
+export async function printInvoiceFromApi(orderId: number): Promise<void> {
+  const data = await fetchOrderInvoiceData(orderId);
+  const lines = data ? invoiceLinesFromApi(data) : null;
+  if (!data || !lines) {
+    throw new Error("No invoice yet. Head Office must convert this order (or back order) to an invoice first.");
+  }
+
+  const toStore = (data.toStore as Record<string, unknown> | undefined) ?? {};
+  printOrderInvoice({
+    reference: String(data.invoiceReference ?? data.invoiceNumber ?? data.reference ?? `INV-${orderId}`),
+    createdAt: (data.date as string) ?? (data.createdAt as string) ?? undefined,
+    createdBy: (data.biller as string) ?? (data.createdBy as string) ?? undefined,
+    storeName: String(toStore.name ?? data.storeName ?? ""),
+    items: lines,
+  });
+}
+
+export function formatOrderStatus(status: string): string {
+  const s = normalizeOrderStatus(status);
+  if (s === "PRE_ORDER") return "Pre-order";
+  if (s === "BACKORDER") return "Back order";
+  if (s === "PARTIALLY_RECEIVED") return "Partially received";
+  if (s === "PARTIAL") return "Partial";
+  if (s === "ORDERED") return "Ordered";
+  if (s === "INVOICED") return "Invoiced";
+  if (s === "DISPATCHED") return "Dispatched";
+  if (s === "RECEIVED") return "Received";
+  if (s === "PROCESSING") return "Processing";
+  if (s === "COMPLETED") return "Completed";
+  if (s === "REJECTED") return "Rejected";
+  if (s === "CANCELLED") return "Cancelled";
+  return String(s).replace(/_/g, " ");
+}
+
+export function canPrintInvoice(order: {
+  status?: string;
+  invoiceId?: number | null;
+  invoiceReference?: string | null;
+  source?: string;
+}): boolean {
+  return hasServerInvoice(order);
+}
+
+export const ORDER_STATUS_FILTERS = [
+  "PRE_ORDER",
+  "ORDERED",
+  "PARTIAL",
+  "BACKORDER",
+  "INVOICED",
+  "DISPATCHED",
+  "RECEIVED",
+  "PARTIALLY_RECEIVED",
+  "COMPLETED",
+  "REJECTED",
+  "CANCELLED",
+] as const;
 
 /** Item count for list rows (API sends itemCount; detail sends items[]). */
 export function orderItemCount(order: {
@@ -603,10 +827,10 @@ export function orderItemCount(order: {
 export function orderStatusTone(
   status: string
 ): "neutral" | "ok" | "warn" | "danger" | "info" {
-  const s = status.toUpperCase();
+  const s = normalizeOrderStatus(status);
   if (s === "COMPLETED" || s === "DISPATCHED" || s === "RECEIVED" || s === "INVOICED") return "ok";
-  if (s === "PENDING" || s === "PROCESSING") return "warn";
-  if (s === "INVOICED") return "info";
+  if (s === "PRE_ORDER" || s === "PROCESSING" || s === "PARTIAL" || s === "PARTIALLY_RECEIVED") return "warn";
+  if (s === "ORDERED" || s === "BACKORDER") return "info";
   if (s === "REJECTED" || s === "CANCELLED") return "danger";
   return "neutral";
 }
