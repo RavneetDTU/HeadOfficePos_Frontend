@@ -133,6 +133,14 @@ export function ProductDetailPage() {
               <dt className="text-slate-500">Unit</dt>
               <dd className="font-medium">{product.unit || "—"}</dd>
             </div>
+            {(product.serialNumbers?.length || product.serialNumber) && (
+              <div className="col-span-2">
+                <dt className="text-slate-500">Serial number</dt>
+                <dd className="font-medium font-mono text-xs">
+                  {product.serialNumbers?.length ? product.serialNumbers.join(", ") : product.serialNumber}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-slate-500">Tax</dt>
               <dd className="font-medium">{product.taxPercent}%</dd>

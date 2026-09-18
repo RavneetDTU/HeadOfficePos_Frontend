@@ -48,6 +48,8 @@ export interface Product {
   allocatedQty?: number;
   incomingSupplierQty?: number;
   totalStock?: number;
+  serialNumber?: string | null;
+  serialNumbers?: string[];
 }
 
 export interface Store {

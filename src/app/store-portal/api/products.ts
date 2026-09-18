@@ -1,4 +1,5 @@
 import { apiFetch, buildQuery } from "@/app/lib/api";
+import { parseProductSerials } from "@/app/services/inventoryService";
 import { resolveMediaUrl } from "@/app/store-portal/lib/media";
 import type { CatalogFacet, Product, ProductImage, StockLine } from "@/app/store-portal/types";
 
@@ -102,6 +103,9 @@ export function mapProduct(raw: Record<string, unknown>): Product {
     imageUrl
   );
   const mrpRaw = raw.mrp ?? raw.listPrice ?? raw.list_price;
+  const serials = parseProductSerials(
+    raw.serialNumbers ?? raw.serial_numbers ?? raw.serialNumber ?? raw.serial_number
+  );
   return {
     id: Number(raw.id ?? raw.productId ?? 0),
     sku: String(raw.sku ?? raw.productSku ?? ""),
@@ -136,6 +140,8 @@ export function mapProduct(raw: Record<string, unknown>): Product {
     incomingSupplierQty:
       raw.incomingSupplierQty != null ? Number(raw.incomingSupplierQty) : undefined,
     totalStock: raw.totalStock != null ? Number(raw.totalStock) : undefined,
+    serialNumber: serials.serialNumber ?? null,
+    serialNumbers: serials.serialNumbers ?? [],
   };
 }
 

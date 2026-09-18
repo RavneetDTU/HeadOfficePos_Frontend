@@ -36,6 +36,8 @@ interface ProductEntry {
   sellingPrice: number;
   taxPercent: number;
   imageUrl?: string;
+  serialNumber?: string | null;
+  serialNumbers?: string[];
 }
 
 interface LocationEntry {
@@ -55,6 +57,38 @@ function csvEscape(value: string | number | null | undefined): string {
     return `"${raw.replace(/"/g, '""')}"`;
   }
   return raw;
+}
+
+function productSerialText(product: {
+  serialNumber?: string | null;
+  serialNumbers?: string[];
+}): string {
+  if (product.serialNumbers && product.serialNumbers.length > 0) {
+    return product.serialNumbers.join(", ");
+  }
+  return String(product.serialNumber ?? "").trim();
+}
+
+function matchesProductSearch(
+  product: ProductEntry,
+  query: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const compact = q.replace(/[\s-]/g, "");
+  const serials = [
+    product.serialNumber ?? "",
+    ...(product.serialNumbers ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return (
+    product.name.toLowerCase().includes(q) ||
+    product.sku.toLowerCase().includes(q) ||
+    (product.category ?? "").toLowerCase().includes(q) ||
+    serials.includes(q) ||
+    serials.replace(/[\s-]/g, "").includes(compact)
+  );
 }
 
 export function ListProducts() {
@@ -206,6 +240,8 @@ export function ListProducts() {
           sellingPrice: Number(p.selling_price ?? 0),
           taxPercent: Number(p.tax_rate ?? 0),
           imageUrl: p.image_url,
+          serialNumber: p.serialNumber,
+          serialNumbers: p.serialNumbers,
         }))
       );
     } catch (e) {
@@ -245,7 +281,12 @@ export function ListProducts() {
 
   // Dynamic lists from active products
   const productSearchSuggestions = useMemo(() => {
-    return Array.from(new Set(products.map((p) => p.name))).sort();
+    const names = products.map((p) => p.name);
+    const serials = products.flatMap((p) => {
+      const text = productSerialText(p);
+      return text ? text.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    });
+    return Array.from(new Set([...names, ...serials])).sort();
   }, [products]);
 
   const categories = useMemo(() => {
@@ -290,13 +331,7 @@ export function ListProducts() {
 
     // 1. Search Filter
     if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          (p.category && p.category.toLowerCase().includes(q))
-      );
+      result = result.filter((p) => matchesProductSearch(p, search));
     }
 
     // 2. Category Filter
@@ -363,6 +398,7 @@ export function ListProducts() {
         sku: p.sku,
         name: p.name,
         category: p.category || "",
+        serialNumber: productSerialText(p),
         costPrice: Number(p.costPrice ?? 0).toFixed(2),
         sellingPrice: Number(p.sellingPrice ?? 0).toFixed(2),
         taxPercent: Number(p.taxPercent ?? 0),
@@ -373,6 +409,7 @@ export function ListProducts() {
     });
 
     const headers = [
+      "Serial Number",
       "ID",
       "SKU",
       "Product Name",
@@ -389,6 +426,7 @@ export function ListProducts() {
       headers.join(","),
       ...rows.map((r) =>
         [
+          csvEscape(r.serialNumber),
           csvEscape(r.id),
           csvEscape(r.sku),
           csvEscape(r.name),
@@ -495,7 +533,7 @@ export function ListProducts() {
           value={search}
           onChange={setSearch}
           suggestions={productSearchSuggestions}
-          placeholder="Search by name or SKU..."
+          placeholder="Search by name, SKU, or serial..."
           className="flex-1 min-w-48"
         />
         <select
@@ -541,6 +579,9 @@ export function ListProducts() {
                 <th className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap w-14">
                   Image
                 </th>
+                <th className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap">
+                  Serial Number
+                </th>
                 <th
                   onClick={() => handleSort("name")}
                   className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap cursor-pointer hover:bg-blue-700 select-none"
@@ -579,6 +620,9 @@ export function ListProducts() {
                       <div className="h-10 w-10 bg-gray-200 rounded-lg" />
                     </td>
                     <td className="px-4 py-4">
+                      <div className="h-4 bg-gray-100 rounded w-24" />
+                    </td>
+                    <td className="px-4 py-4">
                       <div className="h-4 bg-gray-200 rounded w-48 mb-2" />
                       <div className="h-3 bg-gray-100 rounded w-20" />
                     </td>
@@ -598,7 +642,7 @@ export function ListProducts() {
                 ))
               ) : paginatedProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center">
+                  <td colSpan={7} className="px-4 py-16 text-center">
                     <Package size={40} className="text-gray-200 mx-auto mb-3" />
                     <p className="text-gray-400 text-sm">No products found matching your filters</p>
                   </td>
@@ -623,6 +667,9 @@ export function ListProducts() {
                           <Package size={18} className="text-blue-600" />
                         </div>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-800 max-w-[220px]">
+                      {productSerialText(p) || "—"}
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900">{p.name}</p>
@@ -722,6 +769,7 @@ export function ListProducts() {
               </div>
               {[
                 ["Category", viewProduct.category || "General"],
+                ["Serial Number", productSerialText(viewProduct) || "—"],
                 ["Cost Price", fmtZAR(viewProduct.costPrice)],
                 ["Selling Price", fmtZAR(viewProduct.sellingPrice)],
                 ["Tax Rate", `${viewProduct.taxPercent}%`],

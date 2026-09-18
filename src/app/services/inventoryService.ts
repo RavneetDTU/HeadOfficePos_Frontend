@@ -306,7 +306,43 @@ export async function createStore(
 
 // ─── Products ─────────────────────────────────────────────────────────────────
 
+/** Accept "SN-111", "SN-111, SN-222", or ["SN-111","SN-222"]. Empty → omit (existing products stay unchanged). */
+export function parseProductSerials(raw: unknown): {
+  serialNumber?: string;
+  serialNumbers?: string[];
+} {
+  const chunks: string[] = [];
+  const push = (value: unknown) => {
+    const text = String(value ?? "").trim();
+    if (!text) return;
+    for (const part of text.split(/[,;|\n]+/)) {
+      const serial = part.trim();
+      if (serial) chunks.push(serial);
+    }
+  };
+  if (Array.isArray(raw)) raw.forEach(push);
+  else push(raw);
+  const serialNumbers = [...new Set(chunks)];
+  if (serialNumbers.length === 0) return {};
+  return {
+    serialNumber: serialNumbers.join(", "),
+    serialNumbers,
+  };
+}
+
+function mapProductSerials(raw: Record<string, unknown>): {
+  serialNumber: string | null;
+  serialNumbers: string[];
+} {
+  const parsed = parseProductSerials(raw.serialNumbers ?? raw.serial_numbers ?? raw.serialNumber ?? raw.serial_number);
+  return {
+    serialNumber: parsed.serialNumber ?? (raw.serialNumber != null ? String(raw.serialNumber) : null),
+    serialNumbers: parsed.serialNumbers ?? [],
+  };
+}
+
 function mapProductResponse(raw: Record<string, unknown>): Product {
+  const serials = mapProductSerials(raw);
   return {
     id: (raw.id as number) ?? 0,
     name: (raw.name as string) ?? "",
@@ -343,6 +379,8 @@ function mapProductResponse(raw: Record<string, unknown>): Product {
       (raw.createdAt as string) ??
       (raw.created_at as string) ??
       new Date().toISOString(),
+    serialNumber: serials.serialNumber,
+    serialNumbers: serials.serialNumbers,
   };
 }
 
@@ -401,6 +439,9 @@ function normalizeProductCreate(data: Record<string, unknown>): ProductCreatePay
     .filter((item) => item.warehouseId > 0 && item.quantity > 0);
 
   const imageUrl = (data.imageUrl ?? data.image_url) as string | undefined;
+  const serials = parseProductSerials(
+    data.serialNumbers ?? data.serial_numbers ?? data.serialNumber ?? data.serial_number ?? data.serial
+  );
 
   return {
     sku: String(data.sku ?? "").trim(),
@@ -430,6 +471,9 @@ function normalizeProductCreate(data: Record<string, unknown>): ProductCreatePay
           ? Number(data.alert_qty)
           : undefined,
     openingStock: openingStock?.length ? openingStock : undefined,
+    ...(serials.serialNumber
+      ? { serialNumber: serials.serialNumber, serialNumbers: serials.serialNumbers }
+      : {}),
   };
 }
 

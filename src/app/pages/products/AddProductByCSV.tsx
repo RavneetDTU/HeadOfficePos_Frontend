@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import { createProduct, getWarehouses } from "../../services/inventoryService";
 
 const CSV_HEADERS = [
+  "serialNumber",
   "name",
   "sku",
   "category",
@@ -30,6 +31,9 @@ const HEADER_ALIASES: Record<string, CsvHeader> = {
   sku: "sku",
   code: "sku",
   productcode: "sku",
+  itemnumber: "sku",
+  itemno: "sku",
+  item_number: "sku",
   category: "category",
   subcategory: "subCategory",
   sub_category: "subCategory",
@@ -40,6 +44,13 @@ const HEADER_ALIASES: Record<string, CsvHeader> = {
   unit: "unit",
   quantity: "quantity",
   qty: "quantity",
+  serialnumber: "serialNumber",
+  serialnumbers: "serialNumber",
+  serial: "serialNumber",
+  serials: "serialNumber",
+  serialno: "serialNumber",
+  serial_number: "serialNumber",
+  sn: "serialNumber",
   costprice: "costPrice",
   cost_price: "costPrice",
   sellingprice: "sellingPrice",
@@ -114,7 +125,7 @@ function taxPercentFromCell(value: string): number {
 function downloadTemplate() {
   const sample = [
     CSV_HEADERS.join(","),
-    "Receiver 85dB,HA-100,Hearing Aids,RIC,Phonak,Audéo Lumity,,Unit,0,1250,1890,VAT 15%,Demo line,https://example.com/ha-100.jpg,Active,2",
+    "\"SN-111, SN-222\",Receiver 85dB,HA-100,Hearing Aids,RIC,Phonak,Audéo Lumity,,Unit,6,1250,1890,VAT 15%,Demo line,https://example.com/ha-100.jpg,Active,2",
   ].join("\n");
   const blob = new Blob([sample], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -157,9 +168,11 @@ export function AddProductByCSV() {
       return;
     }
     const headers = table[0].map((h) => HEADER_ALIASES[h.replace(/\s+/g, "").toLowerCase()]);
-    if (!headers.includes("name") || !headers.includes("sku")) {
+    const hasName = headers.includes("name") || headers.includes("description");
+    const hasSku = headers.includes("sku");
+    if (!hasName || !hasSku) {
       setRows([]);
-      setParseError("CSV must include name and sku columns (same fields as Add Product).");
+      setParseError("CSV must include name (or Description) and sku (or Item number).");
       return;
     }
     const parsed: ParsedRow[] = [];
@@ -186,7 +199,7 @@ export function AddProductByCSV() {
     const failed: { line: number; sku: string; error: string }[] = [];
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const name = String(row.values.name ?? "").trim();
+      const name = String(row.values.name ?? "").trim() || String(row.values.description ?? "").trim();
       const sku = String(row.values.sku ?? "").trim();
       setProgress(`Saving ${i + 1} of ${rows.length}…`);
       if (!name || !sku) {
@@ -211,6 +224,7 @@ export function AddProductByCSV() {
           imageUrl: row.values.imageUrl?.trim() || undefined,
           status: (row.values.status?.trim() || "Active") as "Active" | "Inactive",
           alertQty: Number(row.values.alertQty) || undefined,
+          serialNumber: row.values.serialNumber?.trim() || undefined,
           openingStock:
             quantity > 0 && warehouseId
               ? [{ warehouseId, quantity }]
@@ -258,8 +272,12 @@ export function AddProductByCSV() {
       <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900 space-y-2">
         <p>Keep the first header row. Column order can match the template; aliases like <code>code</code> for SKU are accepted.</p>
         <p>
-          Columns: name, sku, category, subCategory, brand, model, supplierId, unit, quantity, costPrice, sellingPrice,
-          tax, description, imageUrl, status, alertQty.
+          First column is <code>serialNumber</code>, then name, sku, category, subCategory, brand, model, supplierId, unit, quantity,
+          costPrice, sellingPrice, tax, description, imageUrl, status, alertQty.
+        </p>
+        <p>
+          Serial numbers are optional. Use one value (<code>SN-111</code>) or several in the first cell
+          (<code>SN-111, SN-222</code>). Item number maps to SKU.
         </p>
         <p>Use this for 30–40 products at a time. Images must already be a public URL (file upload stays on Add Product).</p>
       </div>

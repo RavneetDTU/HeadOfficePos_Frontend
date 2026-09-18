@@ -43,6 +43,7 @@ export function AddProduct() {
     supplierId: "",
     unit: "Unit",
     quantity: "0",
+    serialNumber: "",
     costPrice: "",
     salePrice: "",
     tax: "No Tax",
@@ -224,6 +225,7 @@ export function AddProduct() {
       supplierId: "",
       unit: "Unit",
       quantity: "0",
+      serialNumber: "",
       costPrice: "",
       salePrice: "",
       tax: "No Tax",
@@ -291,6 +293,7 @@ export function AddProduct() {
         thumbnailUrl,
         alertQty: Number(form.alertQty) || undefined,
         status: form.status as "Active" | "Inactive",
+        serialNumber: form.serialNumber.trim() || undefined,
         openingStock:
           quantity > 0 && defaultWarehouseId
             ? [{ warehouseId: defaultWarehouseId, quantity }]
@@ -378,6 +381,19 @@ export function AddProduct() {
                   placeholder="Enter unique SKU"
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Serial Number</label>
+                <input
+                  type="text"
+                  value={form.serialNumber}
+                  onChange={(e) => updateField("serialNumber", e.target.value)}
+                  placeholder="SN-111 or SN-111, SN-222"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Optional. One serial, or several separated by commas.
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Category *</label>
@@ -755,6 +771,10 @@ export function AddProduct() {
               <div className="flex justify-between">
                 <span className="text-blue-200">SKU</span>
                 <span className="font-medium">{form.code || "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-blue-200">Serial</span>
+                <span className="font-medium text-right max-w-32 truncate">{form.serialNumber || "—"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-blue-200">Category</span>

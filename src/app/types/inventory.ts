@@ -631,6 +631,8 @@ export interface ProductResponse {
   status: string;
   alertQty?: number;
   totalStock?: number;
+  serialNumber?: string | null;
+  serialNumbers?: string[];
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -661,6 +663,9 @@ export interface ProductCreatePayload {
   status?: string;
   alertQty?: number;
   openingStock?: Array<{ warehouseId: number; quantity: number }>;
+  /** One serial, or comma-separated: "SN-111" / "SN-111, SN-222" */
+  serialNumber?: string | null;
+  serialNumbers?: string[];
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────
@@ -692,6 +697,8 @@ export interface Product {
   total_stock?: number;
   status: "Active" | "Inactive";
   created_at: string;
+  serialNumber?: string | null;
+  serialNumbers?: string[];
 }
 
 // ─── People contacts (Suppliers / Billers / Customers) ─────────────────────────
